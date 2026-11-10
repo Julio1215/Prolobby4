@@ -1,0 +1,20 @@
+SERVIDOR DE SINALIZAÇÃO DA CHAMADA (grátis no Render)
+
+Ele só ajuda as pessoas a se encontrarem. O vídeo e o áudio vão direto entre elas.
+
+1. Suba o projeto para o GitHub (esta pasta "servidor-peer" vai junto).
+2. No Render: New > Web Service > escolha o repositório.
+3. Preencha:
+     Root Directory:  servidor-peer
+     Build Command:   npm install
+     Start Command:   npm start
+     Instance Type:   Free
+4. Quando ficar "Live", copie o endereço (ex.: prolobby-peer.onrender.com).
+5. No site estático do ProLobby (Render) > Environment, crie:
+     VITE_PEER_HOST = prolobby-peer.onrender.com   (sem https://)
+   e faça um novo deploy. Para testar no seu computador, ponha a mesma linha no arquivo .env.
+6. Se usar a pasta do Netlify (Activity do Discord), cole o mesmo endereço no config.js.
+   No Discord Developer Portal, o mapeamento /peer passa a apontar para esse endereço (em vez de 0.peerjs.com).
+
+Obs.: no plano grátis o servidor dorme depois de uns 15 minutos sem uso. A primeira conexão
+depois disso demora até 1 minuto; a chamada tenta de novo sozinha.

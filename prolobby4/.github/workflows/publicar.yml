@@ -1,0 +1,68 @@
+# Publicação automática no InfinityFree
+#
+# A cada "git push" na branch principal, o GitHub:
+#   1. compila o site (npm run build, gera a pasta dist);
+#   2. junta o site compilado com a API (pasta api);
+#   3. envia tudo por FTP para a pasta htdocs do InfinityFree.
+#
+# Ninguém precisa rodar "npm run build" nem mexer em dist/assets no servidor.
+# Os dados de FTP ficam guardados como "segredos" no GitHub
+# (Settings > Secrets and variables > Actions), nunca neste arquivo.
+
+name: Publicar no InfinityFree
+
+on:
+  push:
+    branches: [master, main]
+    paths-ignore:
+      - '**.md'            # mudar só um texto .md não precisa publicar de novo
+  workflow_dispatch:       # permite rodar na mão: aba Actions > Publicar no InfinityFree > Run workflow
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publicar-infinityfree
+  cancel-in-progress: false   # se houver duas publicações seguidas, uma espera a outra terminar
+
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Baixar o código do repositório
+        uses: actions/checkout@v4
+
+      - name: Instalar o Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar as dependências do projeto
+        run: npm ci
+
+      - name: Compilar o site (gera a pasta dist)
+        run: npm run build
+        env:
+          VITE_API_URL: /api                           # site e API ficam no mesmo endereço
+          VITE_PEER_HOST: ${{ vars.VITE_PEER_HOST }}   # opcional: servidor da chamada (vazio = servidor público)
+
+      - name: Montar a pasta que vai para o servidor
+        run: |
+          mkdir -p publicar/api
+          cp -r dist/. publicar/
+          cp -r api/. publicar/api/
+          # Estes arquivos NÃO vão para o servidor: a senha do banco (env.php) fica só lá.
+          rm -f publicar/api/env.php publicar/api/env.php.example publicar/api/diagnostico.php
+
+      - name: Enviar por FTP para o InfinityFree
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          local-dir: ./publicar/
+          server-dir: /htdocs/
+          # dry-run: true     # descomente para só simular (mostra o que enviaria, sem enviar nada)

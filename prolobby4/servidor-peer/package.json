@@ -1,0 +1,10 @@
+{
+  "name": "prolobby-peer",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Servidor de sinalização do PeerJS para a Chamada do ProLobby",
+  "scripts": { "start": "node server.js" },
+  "dependencies": { "peer": "^1.0.2" },
+  "engines": { "node": ">=18" }
+}

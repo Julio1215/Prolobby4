@@ -11,7 +11,6 @@
 import { useState, useEffect } from 'react'
 import { listarJogos } from '../../services/conteudoApi'
 import { useNavigate } from 'react-router-dom'
-import CapaDoJogo from '../ui/CapaDoJogo';
 
 const CATALOGO_JOGOS = [
   { id: 1,  name: 'Elden Ring',                      imagem: 'https://imgs.search.brave.com/SURZwdns-bi9yiBN-LQxfBHwHYcXGnG0yuFaYSvD0VA/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9wcmV2/aWV3LnJlZGQuaXQv/ZWxkZW4tcmluZy1j/b3Zlci1pbnNwaXJh/dGlvbnMtdjAtN211/b3NqNnU3czRlMS5q/cGc_d2lkdGg9Mzg0/MCZmb3JtYXQ9cGpw/ZyZhdXRvPXdlYnAm/cz0yMGUwMzg3ZjVh/YmFlY2FiYjZjMTdk/ZWY0ZTY0MmNjNWNl/ZTUxNWQz', rating: 4.6, metacritic: 96, released: '2022-02-25', playtime: 55, genres: ['RPG', 'Action'],           description_raw: 'RPG de ação em mundo aberto ambientado nas Terras Intermédias, com combate desafiador e exploração não-linear.' },
@@ -97,8 +96,11 @@ function CardJogo({ game, onClick }) {
       onClick={onClick}
       className="bg-dark-card/40 border border-dark-border rounded-xl overflow-hidden hover:border-purple-500/50 transition-all group cursor-pointer text-dark-text-1"
     >
-      <div className="aspect-[2/3] overflow-hidden">
-        <CapaDoJogo nome={game.name} url={game.background_image} emoji={visual.emoji} fundo={visual.bgClass} />
+      <div className={`aspect-[3/4] overflow-hidden flex items-center justify-center ${visual.bgClass}`}>
+        {game.background_image
+          ? <img src={game.background_image} alt={game.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+          : <span className="text-4xl">{visual.emoji}</span>
+        }
       </div>
       <div className="p-3">
         <h3 className="font-bold text-sm group-hover:text-purple-400 transition-colors line-clamp-2 mb-2">
@@ -166,8 +168,11 @@ function DetalheJogo({ game, onVoltar }) {
           <div className="bg-dark-card/40 border border-dark-border/50 rounded-xl p-6 text-dark-text-1">
             <h2 className="text-3xl font-bold text-purple-400 mb-4">{game.name}</h2>
 
-            <div className="aspect-video overflow-hidden rounded-xl border border-dark-border mb-6">
-              <CapaDoJogo nome={game.name} url={game.background_image} emoji={visual.emoji} fundo={visual.bgClass} vertical={false} />
+            <div className={`aspect-video overflow-hidden rounded-xl border border-dark-border mb-6 flex items-center justify-center ${visual.bgClass}`}>
+              {game.background_image
+                ? <img src={game.background_image} alt={game.name} className="w-full h-full object-cover" />
+                : <span className="text-6xl">{visual.emoji}</span>
+              }
             </div>
 
             <h3 className="font-bold text-lg text-purple-300 mb-2">Sobre o jogo</h3>
@@ -326,7 +331,7 @@ export default function QcdScore() {
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
           {[...Array(12)].map((_, i) => (
             <div key={i} className="bg-dark-card/40 rounded-xl animate-pulse">
-              <div className="aspect-[2/3] bg-dark-hover rounded-t-xl" />
+              <div className="aspect-[3/4] bg-dark-hover rounded-t-xl" />
               <div className="p-3 space-y-2">
                 <div className="h-3 bg-dark-hover rounded w-3/4" />
                 <div className="h-3 bg-dark-hover rounded w-1/2" />

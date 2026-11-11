@@ -7,7 +7,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { listarJogos, listarReviews } from '../../services/conteudoApi';
-import CapaDoJogo from '../ui/CapaDoJogo';
 
 const CATALOGO_JOGOS = [
   { id: 1,  name: 'Elden Ring',imagem: 'https://imgs.search.brave.com/SURZwdns-bi9yiBN-LQxfBHwHYcXGnG0yuFaYSvD0VA/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9wcmV2/aWV3LnJlZGQuaXQv/ZWxkZW4tcmluZy1j/b3Zlci1pbnNwaXJh/dGlvbnMtdjAtN211/b3NqNnU3czRlMS5q/cGc_d2lkdGg9Mzg0/MCZmb3JtYXQ9cGpw/ZyZhdXRvPXdlYnAm/cz0yMGUwMzg3ZjVh/YmFlY2FiYjZjMTdk/ZWY0ZTY0MmNjNWNl/ZTUxNWQz', rating: 4.6, metacritic: 96, released: '2022-02-25', playtime: 55, genres: ['RPG', 'Action'], description_raw: 'Obra-prima do gênero Soulslike que redefiniu os mundos abertos ao unir o combate exigente da FromSoftware à liberdade total de exploração orgânica e não-linear nas Terras Intermédias.' },
@@ -147,8 +146,11 @@ export default function Reviews() {
 
         <div className="bg-dark-card/40 border border-dark-border/50 rounded-xl p-6 backdrop-blur-sm mb-8 text-dark-text-1">
           <div className="flex flex-col lg:flex-row gap-8">
-            <div className="w-full max-w-sm mx-auto lg:mx-0 lg:max-w-none lg:w-1/3 aspect-[2/3] rounded-xl overflow-hidden border border-dark-border">
-              <CapaDoJogo nome={jogoSelecionado.name} url={jogoSelecionado.background_image} emoji={visualDoJogo(jogoSelecionado).emoji} fundo={visualDoJogo(jogoSelecionado).bgClass} />
+            <div className={`w-full lg:w-1/3 aspect-[4/5] rounded-xl overflow-hidden border border-dark-border flex items-center justify-center ${visualDoJogo(jogoSelecionado).bgClass}`}>
+              {jogoSelecionado.background_image
+                ? <img src={jogoSelecionado.background_image} alt={jogoSelecionado.name} className="w-full h-full object-cover" />
+                : <span className="text-6xl">{visualDoJogo(jogoSelecionado).emoji}</span>
+              }
             </div>
 
             <div className="flex-1 space-y-4">
@@ -216,8 +218,11 @@ export default function Reviews() {
           {jogosFiltrados.map((game) => (
             <div key={game.id} onClick={() => abrirReview(game.id)} className="bg-dark-card/40 border border-dark-border rounded-xl overflow-hidden hover:border-purple-500/50 transition-all group cursor-pointer backdrop-blur-sm flex flex-col justify-between text-dark-text-1">
               <div>
-                <div className="aspect-[2/3] overflow-hidden">
-                  <CapaDoJogo nome={game.name} url={game.background_image} emoji={visualDoJogo(game).emoji} fundo={visualDoJogo(game).bgClass} />
+                <div className={`aspect-[3/4] overflow-hidden flex items-center justify-center ${visualDoJogo(game).bgClass}`}>
+                  {game.background_image
+                    ? <img src={game.background_image} alt={game.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                    : <span className="text-4xl">{visualDoJogo(game).emoji}</span>
+                  }
                 </div>
                 <h3 className="font-bold text-sm group-hover:text-purple-400 transition-colors line-clamp-2 px-3 pt-2">{game.name}</h3>
               </div>

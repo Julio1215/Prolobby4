@@ -12,6 +12,7 @@ const CATEGORIAS = [
   { nome: 'Nintendo',    cor: 'text-red-600',   corHover: 'hover:text-red-400',   corGrupoHover: 'group-hover:text-red-600',   bg: 'bg-red-600/20'   },
   { nome: 'Jogos',       cor: 'text-orange-500',corHover: 'hover:text-orange-400',corGrupoHover: 'group-hover:text-orange-500',bg: 'bg-orange-500/20'},
   { nome: 'Retrô',       cor: 'text-purple-500',corHover: 'hover:text-yellow-400',corGrupoHover: 'group-hover:text-purple-600',bg: 'bg-purple-500/20'},
+  { nome: 'Geek',        cor: 'text-pink-500',  corHover: 'hover:text-pink-400',  corGrupoHover: 'group-hover:text-pink-600',  bg: 'bg-pink-500/20'  },
 ]
 
 function corDaCategoria(nomeCategoria) {
@@ -21,7 +22,7 @@ function corDaCategoria(nomeCategoria) {
 // ------------------------------------------------------------
 // Notícias que vêm do banco (API)
 // A API só separa "games" e "e-sports". Por isso a categoria de cada card
-// (Playstation, Xbox, Nintendo, Jogos, Retrô) é descoberta pelas palavras do título.
+// (Playstation, Xbox, Nintendo, Jogos, Retrô ou Geek) é descoberta pelo título e pelo endereço.
 // ------------------------------------------------------------
 
 // Pedimos só notícias de games e em português (e-sports têm seção própria)
@@ -32,9 +33,41 @@ const PALAVRAS_PLAYSTATION = /playstation|\bps ?[1-5]\b|\bpsp\b|ps vita|ps plus|
 const PALAVRAS_XBOX = /xbox|game pass|microsoft|\bhalo\b|forza|gears of war|series [xs]\b/i
 const PALAVRAS_NINTENDO = /nintendo|switch|zelda|mario|pok[eé]mon|kirby|metroid|splatoon|animal crossing|smash bros|joy-con|donkey kong|fire emblem|xenoblade/i
 
-// Descobre a categoria olhando só o título. Retrô tem prioridade;
-// se citar mais de um console (ou nenhum), a notícia fica em "Jogos".
-function descobrirCategoria(titulo) {
+// ----- Geek: tudo que não é jogo (anime, filmes, séries, livros, tecnologia, ofertas...) -----
+
+// Expressões que têm "jogo(s)" ou "game", mas não são sobre videogame
+const FALSOS_AMIGOS = /jogos vorazes|jogos mortais|jogo da lula|squid game|game of thrones|jogos ol[ií]mpicos/gi
+
+// Se o título tiver alguma destas palavras, a notícia fala de jogos e NUNCA é Geek
+const PALAVRAS_DE_JOGOS = /jogos?\b|jogador|jogabilidade|\bgames?\b|gamescom|gamer|gameplay|console|playstation|\bps ?[1-5]\b|\bpsp\b|xbox|nintendo|\bswitch\b|steam|epic games|game pass|\bdlc\b|\bpatch\b|e-?sports?|speedrun|\bfps\b|\brpg\b|\bmmo|roguelike|souls|\bgta\b|zelda|mario|pok[eé]mon|fortnite|minecraft|roblox|call of duty|battlefield|assassin|resident evil|final fantasy|god of war|elden ring|cyberpunk|witcher|hollow knight|persona \d|tekken|street fighter|mortal kombat|league of legends|valorant|overwatch|diablo|destiny|\bhalo\b|forza|gears of war|starfield|baldur|dying light|silent hill|metal gear|monster hunter|dragon quest|kingdom hearts|\bsonic\b|\bdoom\b|fallout|skyrim|counter-strike|\bdota\b|dualsense|nuuvem/i
+
+// Palavras de assuntos Geek (usadas quando o endereço não diz a seção da notícia)
+const PALAVRAS_GEEK = /anime|mang[áa]|\bfilmes?\b|\bs[ée]ries?\b|temporada|epis[óo]dios?|netflix|\bhbo\b|disney\+|disney plus|prime video|apple tv|crunchyroll|cinema|bilheteria|live-action|quadrinhos|\bhq\b|\blivros?\b|\bbox\b|trilogia|\bvolumes?\b|streaming|smart tv|\btv\b|soundbar|notebook|smartphone|iphone|galaxy|tablet|celular|geladeira|novo cap[íi]tulo d[eoa]|dandadan|one piece|jujutsu|demon slayer|chainsaw man|my hero academia|attack on titan|spy x family|solo leveling|frieren|ci[êe]ncia|cientistas/i
+
+// Sites que misturam jogos com filmes, séries, ofertas, ciência e tecnologia, mas separam
+// por seção no endereço (ex.: site.com.br/games/titulo). Neles, o que está fora de /games/ é Geek.
+const SITES_COM_SECAO_DE_GAMES = ['adrenaline.com.br', 'criticalhits.com.br']
+
+function estaForaDaSecaoDeGames(endereco) {
+  try {
+    const { hostname, pathname } = new URL(endereco)
+    const siteComSecao = SITES_COM_SECAO_DE_GAMES.some(site => hostname === site || hostname.endsWith('.' + site))
+    return siteComSecao && !pathname.startsWith('/games/')
+  } catch {
+    return false // endereço estranho: não dá para saber, então não vira Geek por isso
+  }
+}
+
+function ehGeek(titulo, endereco) {
+  const texto = titulo.replace(FALSOS_AMIGOS, ' ')
+  if (PALAVRAS_DE_JOGOS.test(texto)) return false
+  return estaForaDaSecaoDeGames(endereco) || PALAVRAS_GEEK.test(texto)
+}
+
+// Descobre a categoria olhando o título (e o endereço, para saber se é Geek).
+// Geek vem primeiro, depois Retrô; se citar mais de um console (ou nenhum), fica em "Jogos".
+function descobrirCategoria(titulo, endereco) {
+  if (ehGeek(titulo, endereco)) return 'Geek'
   if (PALAVRAS_RETRO.test(titulo)) return 'Retrô'
   const consoles = []
   if (PALAVRAS_PLAYSTATION.test(titulo)) consoles.push('Playstation')
@@ -57,32 +90,16 @@ function tituloEmIngles(titulo) {
   return qtdIngles >= 2 && qtdIngles > qtdPortugues
 }
 
-// Alguns sites misturam jogos com filmes, séries, ofertas, ciência e tecnologia.
-// Neles, só vale a notícia da seção /games/ do endereço (ex.: site.com.br/games/titulo).
-// Sites que não estão nesta lista (ex.: IGN Brasil) ficam como estão.
-const SITES_COM_SECAO_DE_GAMES = ['adrenaline.com.br', 'criticalhits.com.br']
-
-function ehNoticiaDeJogos(endereco) {
-  try {
-    const { hostname, pathname } = new URL(endereco)
-    const siteMisturado = SITES_COM_SECAO_DE_GAMES.some(site => hostname === site || hostname.endsWith('.' + site))
-    return siteMisturado ? pathname.startsWith('/games/') : true
-  } catch {
-    return true // endereço estranho: não esconde a notícia
-  }
-}
-
-// Converte as notícias da API para o formato dos cards (sem as que estão em inglês
-// nem as que não são de jogos)
+// Converte as notícias da API para o formato dos cards (sem as que estão em inglês)
 function prepararNoticiasDoBanco(lista) {
   return lista
-    .filter(n => ehNoticiaDeJogos(n.url) && !tituloEmIngles(n.titulo))
+    .filter(n => !tituloEmIngles(n.titulo))
     .map(n => ({
       id: n.id,
       titulo: n.titulo,
       link: n.url,
       imagem: n.imagemUrl || '/news-assets/jogo.png',
-      categoria: descobrirCategoria(n.titulo),
+      categoria: descobrirCategoria(n.titulo, n.url),
       data: n.publicadaEm ? new Date(n.publicadaEm).toLocaleDateString('pt-BR') : '',
     }))
 }
@@ -210,7 +227,8 @@ export default function Noticias() {
   }, [])
 
   const todasAsNoticias = noticiasDoBanco ?? TODAS_AS_NOTICIAS
-  let noticiasFiltradas = todasAsNoticias
+  // Sem filtro, a lista principal mostra só jogos. As notícias Geek aparecem ao clicar em "Geek".
+  let noticiasFiltradas = todasAsNoticias.filter(n => n.categoria !== 'Geek')
   if (categoriaAtiva) {
     noticiasFiltradas = todasAsNoticias.filter(n => n.categoria === categoriaAtiva)
   }
@@ -218,10 +236,10 @@ export default function Noticias() {
   const noticiasExibidas = noticiasFiltradas.slice(0, quantidadeVisivel)
   const temMaisNoticias = quantidadeVisivel < noticiasFiltradas.length
 
-  // Mais lidas: a API ainda não conta leituras, então com dados do banco mostramos as 5 mais recentes
+  // Mais lidas: a API ainda não conta leituras, então com dados do banco mostramos as 5 mais recentes de jogos
   // (cada uma abre a notícia). Sem a API, continua a lista fixa da colega.
   const maisLidas = noticiasDoBanco
-    ? noticiasDoBanco.slice(0, 5)
+    ? noticiasDoBanco.filter(n => n.categoria !== 'Geek').slice(0, 5)
     : MAIS_LIDAS.map(titulo => ({ titulo }))
 
   function selecionarCategoria(nomeCategoria) {

@@ -1,0 +1,14 @@
+# Garante que o endereço sem nada no final (a raiz do site) abra o index.html do React,
+# e não a página padrão da hospedagem.
+DirectoryIndex index.html
+
+# Rotas do React (react-router): qualquer endereço que não seja arquivo ou pasta abre o index.html.
+# A pasta /api fica de fora, porque ali é o PHP.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^$ index.html [L]
+  RewriteCond %{REQUEST_URI} !^/api/
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteRule ^ /index.html [L]
+</IfModule>

@@ -6,7 +6,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { listarJogos, listarReviews } from '../../services/conteudoApi';
+import { listarJogos, listarReviews, buscarCapasQueFaltam } from '../../services/conteudoApi';
 import CapaDoJogo from '../ui/CapaDoJogo';
 
 const CATALOGO_JOGOS = [
@@ -80,21 +80,28 @@ export default function Reviews() {
 
   useEffect(() => {
     let ativo = true;
-    listarJogos({ limite: 50 }).then(({ jogos: catalogo }) => {
-      if (!ativo) return;
-      setJogos(catalogo.map(jogo => ({
-        id: jogo.id,
-        name: jogo.titulo,
-        imagem: jogo.capaUrl,
-        background_image: jogo.capaUrl,
-        rating: jogo.notaMedia ? jogo.notaMedia / 2 : 0,
-        metacritic: null,
-        released: jogo.anoLancamento ? String(jogo.anoLancamento) : '',
-        playtime: jogo.horasPrincipal || 0,
-        genres: [jogo.genero],
-        description_raw: jogo.descricao || '',
-      })));
-    }).catch(() => {});
+    function carregarCatalogo(buscarCapas) {
+      listarJogos({ limite: 50 }).then(({ jogos: catalogo }) => {
+        if (!ativo) return;
+        setJogos(catalogo.map(jogo => ({
+          id: jogo.id,
+          name: jogo.titulo,
+          imagem: jogo.capaUrl,
+          background_image: jogo.capaUrl,
+          rating: jogo.notaMedia ? jogo.notaMedia / 2 : 0,
+          metacritic: null,
+          released: jogo.anoLancamento ? String(jogo.anoLancamento) : '',
+          playtime: jogo.horasPrincipal || 0,
+          genres: [jogo.genero],
+          description_raw: jogo.descricao || '',
+        })));
+        // Tem jogo sem capa? Pede ao servidor para buscar (uma vez por visita) e recarrega a lista se achar alguma.
+        if (buscarCapas && catalogo.some(jogo => !jogo.capaUrl)) {
+          buscarCapasQueFaltam().then(achou => { if (achou) carregarCatalogo(false); });
+        }
+      }).catch(() => {});
+    }
+    carregarCatalogo(true);
     return () => { ativo = false };
   }, []);
 

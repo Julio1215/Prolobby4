@@ -94,6 +94,20 @@ export function listarFiltrosJogos() {
   return chamarApi('/jogos/filtros.php');
 }
 
+// Pede ao servidor para buscar a capa dos jogos que estão sem imagem (jogos fora da Steam).
+// Só pergunta uma vez por visita ao site (sessionStorage) e o servidor só busca se tiver as chaves da IGDB.
+// Devolve true se alguma capa nova foi encontrada (aí vale recarregar a lista de jogos).
+export async function buscarCapasQueFaltam() {
+  try {
+    if (sessionStorage.getItem('capas_tentadas')) return false;
+    sessionStorage.setItem('capas_tentadas', '1');
+    const resposta = await chamarApi('/jogos/buscar-capas.php', { method: 'POST', body: {} });
+    return (resposta.atualizadas || 0) > 0;
+  } catch (erro) {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // REVIEWS
 // ---------------------------------------------------------------------------

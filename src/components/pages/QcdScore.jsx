@@ -9,7 +9,7 @@
 // Se deixar vazio (''), aparece o emoji do gênero no lugar.
 
 import { useState, useEffect } from 'react'
-import { listarJogos } from '../../services/conteudoApi'
+import { listarJogos, buscarCapasQueFaltam } from '../../services/conteudoApi'
 import { useNavigate } from 'react-router-dom'
 import CapaDoJogo from '../ui/CapaDoJogo';
 
@@ -257,6 +257,10 @@ export default function QcdScore() {
         background_image: jogo.capaUrl,
         description_raw: jogo.descricao || '',
       })))
+      // Tem jogo sem capa? Pede ao servidor para buscar (uma vez por visita) e recarrega a lista se achar alguma.
+      if (resposta.jogos.some(jogo => !jogo.capaUrl)) {
+        buscarCapasQueFaltam().then(achou => { if (achou) carregarJogos() })
+      }
     } catch {
       setJogos(catalogoParaJogos(CATALOGO_JOGOS))
     }

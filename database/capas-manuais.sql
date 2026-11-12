@@ -1,0 +1,16 @@
+-- Capas manuais para os jogos que a busca automática não encontrou (ou que você prefere trocar).
+--
+-- Como pegar o endereço de uma capa oficial:
+--   1. Abra a página do jogo na Nintendo eShop, na PlayStation Store, na Xbox Store ou no site oficial.
+--   2. Clique com o botão direito na imagem da capa e escolha "Copiar endereço da imagem".
+--   3. Tire o "-- " do começo da linha do jogo, cole o endereço no lugar de COLE_AQUI_O_ENDERECO
+--      e rode o comando no phpMyAdmin (aba SQL).
+--
+-- O endereço precisa ser público (começar com https://) e ter no máximo 500 caracteres.
+-- Se a imagem não aparecer no site, o site de origem pode estar bloqueando o uso: tente outra fonte.
+-- Para voltar ao automático (capa da Steam ou busca na IGDB): UPDATE jogos SET capa_url = NULL WHERE slug = '...';
+
+-- UPDATE jogos SET capa_url = 'COLE_AQUI_O_ENDERECO' WHERE slug = 'zelda-breath-of-the-wild';
+-- UPDATE jogos SET capa_url = 'COLE_AQUI_O_ENDERECO' WHERE slug = 'super-mario-odyssey';
+-- UPDATE jogos SET capa_url = 'COLE_AQUI_O_ENDERECO' WHERE slug = 'valorant';
+-- UPDATE jogos SET capa_url = 'COLE_AQUI_O_ENDERECO' WHERE slug = 'league-of-legends';

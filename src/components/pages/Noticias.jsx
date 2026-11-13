@@ -13,7 +13,11 @@ const CATEGORIAS = [
   { nome: 'Jogos',       cor: 'text-orange-500',corHover: 'hover:text-orange-400',corGrupoHover: 'group-hover:text-orange-500',bg: 'bg-orange-500/20'},
   { nome: 'Retrô',       cor: 'text-purple-500',corHover: 'hover:text-yellow-400',corGrupoHover: 'group-hover:text-purple-600',bg: 'bg-purple-500/20'},
   { nome: 'Geek',        cor: 'text-pink-500',  corHover: 'hover:text-pink-400',  corGrupoHover: 'group-hover:text-pink-600',  bg: 'bg-pink-500/20'  },
+  { nome: 'Produtos',    cor: 'text-cyan-600',  corHover: 'hover:text-cyan-400',  corGrupoHover: 'group-hover:text-cyan-700',  bg: 'bg-cyan-600/20'  },
 ]
+
+// Estas categorias só aparecem quando o filtro delas é clicado (a lista principal é só de jogos)
+const CATEGORIAS_FORA_DA_LISTA = ['Geek', 'Produtos']
 
 function corDaCategoria(nomeCategoria) {
   return CATEGORIAS.find(c => c.nome === nomeCategoria) || CATEGORIAS[3]
@@ -22,7 +26,7 @@ function corDaCategoria(nomeCategoria) {
 // ------------------------------------------------------------
 // Notícias que vêm do banco (API)
 // A API só separa "games" e "e-sports". Por isso a categoria de cada card
-// (Playstation, Xbox, Nintendo, Jogos, Retrô ou Geek) é descoberta pelo título e pelo endereço.
+// (Playstation, Xbox, Nintendo, Jogos, Retrô, Geek ou Produtos) é descoberta pelo título e pelo endereço.
 // ------------------------------------------------------------
 
 // Pedimos só notícias de games e em português (e-sports têm seção própria)
@@ -33,7 +37,7 @@ const PALAVRAS_PLAYSTATION = /playstation|\bps ?[1-5]\b|\bpsp\b|ps vita|ps plus|
 const PALAVRAS_XBOX = /xbox|game pass|microsoft|\bhalo\b|forza|gears of war|series [xs]\b/i
 const PALAVRAS_NINTENDO = /nintendo|switch|zelda|mario|pok[eé]mon|kirby|metroid|splatoon|animal crossing|smash bros|joy-con|donkey kong|fire emblem|xenoblade/i
 
-// ----- Geek: tudo que não é jogo (anime, filmes, séries, livros, tecnologia, ofertas...) -----
+// ----- Geek: tudo que não é jogo nem produto (anime, mangá, filmes, séries, livros, ciência...) -----
 
 // Expressões que têm "jogo(s)" ou "game", mas não são sobre videogame
 const FALSOS_AMIGOS = /jogos vorazes|jogos mortais|jogo da lula|squid game|game of thrones|jogos ol[ií]mpicos/gi
@@ -42,7 +46,7 @@ const FALSOS_AMIGOS = /jogos vorazes|jogos mortais|jogo da lula|squid game|game 
 const PALAVRAS_DE_JOGOS = /jogos?\b|jogador|jogabilidade|\bgames?\b|gamescom|gamer|gameplay|console|playstation|\bps ?[1-5]\b|\bpsp\b|xbox|nintendo|\bswitch\b|steam|epic games|game pass|\bdlc\b|\bpatch\b|e-?sports?|speedrun|\bfps\b|\brpg\b|\bmmo|roguelike|souls|\bgta\b|zelda|mario|pok[eé]mon|fortnite|minecraft|roblox|call of duty|battlefield|assassin|resident evil|final fantasy|god of war|elden ring|cyberpunk|witcher|hollow knight|persona \d|tekken|street fighter|mortal kombat|league of legends|valorant|overwatch|diablo|destiny|\bhalo\b|forza|gears of war|starfield|baldur|dying light|silent hill|metal gear|monster hunter|dragon quest|kingdom hearts|\bsonic\b|\bdoom\b|fallout|skyrim|counter-strike|\bdota\b|dualsense|nuuvem/i
 
 // Palavras de assuntos Geek (usadas quando o endereço não diz a seção da notícia)
-const PALAVRAS_GEEK = /anime|mang[áa]|\bfilmes?\b|\bs[ée]ries?\b|temporada|epis[óo]dios?|netflix|\bhbo\b|disney\+|disney plus|prime video|apple tv|crunchyroll|cinema|bilheteria|live-action|quadrinhos|\bhq\b|\blivros?\b|\bbox\b|trilogia|\bvolumes?\b|streaming|smart tv|\btv\b|soundbar|notebook|smartphone|iphone|galaxy|tablet|celular|geladeira|novo cap[íi]tulo d[eoa]|dandadan|one piece|jujutsu|demon slayer|chainsaw man|my hero academia|attack on titan|spy x family|solo leveling|frieren|ci[êe]ncia|cientistas/i
+const PALAVRAS_GEEK = /anime|mang[áa]|\bfilmes?\b|\bs[ée]ries?\b|temporada|epis[óo]dios?|netflix|\bhbo\b|disney\+|disney plus|prime video|apple tv|crunchyroll|cinema|bilheteria|live-action|quadrinhos|\bhq\b|\blivros?\b|\bbox\b|trilogia|\bvolumes?\b|streaming|\btv\b|novo cap[íi]tulo d[eoa]|dandadan|one piece|jujutsu|demon slayer|chainsaw man|my hero academia|attack on titan|spy x family|solo leveling|frieren|ci[êe]ncia|cientistas/i
 
 // Sites que misturam jogos com filmes, séries, ofertas, ciência e tecnologia, mas separam
 // por seção no endereço (ex.: site.com.br/games/titulo). Neles, o que está fora de /games/ é Geek.
@@ -64,9 +68,38 @@ function ehGeek(titulo, endereco) {
   return estaForaDaSecaoDeGames(endereco) || PALAVRAS_GEEK.test(texto)
 }
 
-// Descobre a categoria olhando o título (e o endereço, para saber se é Geek).
-// Geek vem primeiro, depois Retrô; se citar mais de um console (ou nenhum), fica em "Jogos".
+// ----- Produtos: eletrônicos, periféricos, acessórios e ofertas de produtos -----
+
+// Palavras de aparelhos e acessórios: sozinhas já indicam Produtos (mesmo que o título cite "gamer")
+const PALAVRAS_DE_PRODUTO = /smart ?tvs?|televis[ãa]o|\boled\b|\bqled\b|monitor(es)?\b|notebooks?|laptops?|pc completo|mini ?pc|computador(es)?|\bdesktop\b|smartphones?|celular(es)?|iphone|ipad|galaxy (tab|s ?\d|z ?\w|watch|buds|a ?\d)|xiaomi|motorola|redmi|tablets?\b|smartwatch|\bfones?\b|headsets?|headphones?|earbuds|airpods|speakers?|alto-?falantes?|caixas? de som|soundbar|\bmouse\b|teclado|webcam|roteador|\bssd\b|hd externo|placa de v[ií]deo|\brtx\b|\bgtx\b|radeon|ryzen|processador(es)?|mem[óo]ria ram|\bcontroles?\b|joystick|gamepad|dualsense|dualshock|joy-?con|steam deck|rog ally|legion go|meta quest|oculus|cadeira gamer|geladeira|ar-condicionado|air fryer|fog[ãa]o|aspirador|carregador|power ?bank|capa protetora|pel[ií]cula|c[âa]mera|drone/i
+
+// Palavras de oferta e de loja: viram Produtos, a não ser que a notícia seja sobre um jogo
+const PALAVRAS_DE_OFERTA = /oferta|desconto|% ?off\b|\boff\b|cupom|cupons|black friday|promo[çc][ãa]o|menor valor|barato|\b(na|no|nas|nos) (amazon(?! prime)|mercado livre|magalu|magazine luiza|kabum|americanas|casas bahia|shopee|aliexpress|fast shop)\b/i
+
+// Seções de sites (primeiro pedaço do endereço) que são de produtos, ofertas e tecnologia
+const SECOES_DE_PRODUTOS = ['ofertas', 'oferta', 'promocoes', 'cupons', 'hardware', 'smartphones', 'celulares', 'tecnologia', 'tech', 'gadgets', 'eletronicos', 'perifericos']
+
+function secaoDoEnderecoEhDeProdutos(endereco) {
+  try {
+    const { hostname, pathname } = new URL(endereco)
+    const siteComSecao = SITES_COM_SECAO_DE_GAMES.some(site => hostname === site || hostname.endsWith('.' + site))
+    return siteComSecao && SECOES_DE_PRODUTOS.includes(pathname.split('/')[1])
+  } catch {
+    return false
+  }
+}
+
+function ehProduto(titulo, endereco) {
+  const texto = titulo.replace(FALSOS_AMIGOS, ' ')
+  if (PALAVRAS_DE_PRODUTO.test(texto)) return true
+  if (PALAVRAS_DE_JOGOS.test(texto)) return false // oferta de jogo continua nas categorias de jogos
+  return PALAVRAS_DE_OFERTA.test(texto) || secaoDoEnderecoEhDeProdutos(endereco)
+}
+
+// Descobre a categoria olhando o título (e o endereço, para saber se é Produtos ou Geek).
+// Produtos vem primeiro, depois Geek e Retrô; se citar mais de um console (ou nenhum), fica em "Jogos".
 function descobrirCategoria(titulo, endereco) {
+  if (ehProduto(titulo, endereco)) return 'Produtos'
   if (ehGeek(titulo, endereco)) return 'Geek'
   if (PALAVRAS_RETRO.test(titulo)) return 'Retrô'
   const consoles = []
@@ -227,8 +260,8 @@ export default function Noticias() {
   }, [])
 
   const todasAsNoticias = noticiasDoBanco ?? TODAS_AS_NOTICIAS
-  // Sem filtro, a lista principal mostra só jogos. As notícias Geek aparecem ao clicar em "Geek".
-  let noticiasFiltradas = todasAsNoticias.filter(n => n.categoria !== 'Geek')
+  // Sem filtro, a lista principal mostra só jogos. Geek e Produtos aparecem ao clicar no filtro delas.
+  let noticiasFiltradas = todasAsNoticias.filter(n => !CATEGORIAS_FORA_DA_LISTA.includes(n.categoria))
   if (categoriaAtiva) {
     noticiasFiltradas = todasAsNoticias.filter(n => n.categoria === categoriaAtiva)
   }
@@ -236,10 +269,10 @@ export default function Noticias() {
   const noticiasExibidas = noticiasFiltradas.slice(0, quantidadeVisivel)
   const temMaisNoticias = quantidadeVisivel < noticiasFiltradas.length
 
-  // Mais lidas: a API ainda não conta leituras, então com dados do banco mostramos as 5 mais recentes de jogos
+  // Mais lidas: a API ainda não conta leituras, então com dados do banco mostramos as 5 mais recentes de jogos (sem Geek e Produtos)
   // (cada uma abre a notícia). Sem a API, continua a lista fixa da colega.
   const maisLidas = noticiasDoBanco
-    ? noticiasDoBanco.filter(n => n.categoria !== 'Geek').slice(0, 5)
+    ? noticiasDoBanco.filter(n => !CATEGORIAS_FORA_DA_LISTA.includes(n.categoria)).slice(0, 5)
     : MAIS_LIDAS.map(titulo => ({ titulo }))
 
   function selecionarCategoria(nomeCategoria) {

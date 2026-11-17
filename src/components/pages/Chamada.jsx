@@ -156,6 +156,11 @@ export default function Chamada({ naPagina }) {
     return () => encerrarTudo()
   }, [])
 
+  // Se a chamada for desmontada (ex.: a pessoa saiu da conta) com a janela flutuante aberta, fecha a janela também
+  useEffect(() => {
+    return () => { if (janelaPip) janelaPip.close() }
+  }, [janelaPip])
+
   // A página da chamada é desenhada dentro do espaço reservado pela rota /chamada
   useEffect(() => {
     setSlot(naPagina ? document.getElementById('slot-chamada') : null)

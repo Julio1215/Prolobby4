@@ -1,5 +1,6 @@
 import { useEffect, useState, lazy, Suspense } from 'react'
-import { Routes, Route, useLocation } from 'react-router-dom'
+import { Routes, Route, Link, useLocation } from 'react-router-dom'
+import { useAuth } from './contexts/AuthContext'
 
 import Layout from './components/layout/Layout'
 
@@ -37,22 +38,42 @@ const GuiaDeJogos = lazy(() => import('./components/pages/GuiaDeJogos'))
 // Chamada de voz, vídeo e tela (layouts Conversa, Apresentação e RPG)
 const Chamada = lazy(() => import('./components/pages/Chamada'))
 
-// Espaço reservado onde a página da chamada é desenhada quando a rota /chamada está aberta
+// Espaço reservado onde a página da chamada é desenhada quando a rota /chamada está aberta.
+// A chamada é só para quem fez login: quem não entrou vê um aviso com os botões Entrar e Criar conta.
 function EspacoDaChamada() {
-  return <div id="slot-chamada" />
+  const { usuario } = useAuth()
+  const { search } = useLocation() // guarda o convite (?sala=...) para voltar a ele depois do login
+
+  if (usuario) return <div id="slot-chamada" />
+
+  const aoEntrar = { voltarPara: '/chamada' + search } // o Login e o Cadastro usam isso para voltar para cá
+  return (
+    <div className="mx-auto mt-10 grid max-w-md gap-4 rounded-xl border border-dark-border bg-dark-card p-6 text-center text-dark-text-1">
+      <div className="text-4xl">🔒</div>
+      <h1 className="text-xl font-bold">A chamada é só para quem fez login</h1>
+      <p className="text-sm text-dark-text-2">Entre na sua conta, ou crie uma (é grátis), para usar a chamada de voz, vídeo e tela.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <Link to="/login" state={aoEntrar} className="rounded-lg bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-500">Entrar</Link>
+        <Link to="/register" state={aoEntrar} className="rounded-lg border border-dark-border px-4 py-2 font-semibold text-dark-text-1 hover:bg-dark-secondary">Criar conta</Link>
+      </div>
+    </div>
+  )
 }
 
 // Mantém a chamada viva em todas as rotas: ela fica montada depois da primeira visita a /chamada
 // (o código só é baixado nessa primeira visita), então trocar de página não derruba a chamada.
 function ChamadaPersistente() {
   const { pathname } = useLocation()
+  const { usuario } = useAuth()
   const [jaVisitou, setJaVisitou] = useState(false)
 
   useEffect(() => {
-    if (pathname === '/chamada') setJaVisitou(true)
-  }, [pathname])
+    if (!usuario) setJaVisitou(false)                    // saiu da conta (ou nem entrou): a chamada some de vez
+    else if (pathname === '/chamada') setJaVisitou(true) // só conta como visita quem fez login
+  }, [pathname, usuario])
 
-  if (!jaVisitou) return null
+  // Sem login a chamada não existe. Se a pessoa sair da conta no meio da chamada, ela é encerrada.
+  if (!jaVisitou || !usuario) return null
   return (
     <Suspense fallback={null}>
       <Chamada naPagina={pathname === '/chamada'} />

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import Peer from 'peerjs'
 import { LayoutConversa, LayoutApresentacao, LayoutRpg, PainelDados, colocarFluxo } from './LayoutsChamada.jsx'
+import { observarFalas } from '../../utils/detectorDeFala.js'
 
 const PREFIXO = 'tl-c-'   // prefixo dos ids no PeerJS
 const MAX_VAGAS = 6       // malha P2P: acima de 5 ou 6 pessoas a internet de cada um não aguenta
@@ -35,6 +36,15 @@ const saidas = new Map()     // "id|tipo" -> chamada que eu fiz para aquela pess
 
 const limparCodigo = (texto) => String(texto || '').replace(/[^A-Za-z0-9_-]/g, '')
 const pararFluxo = (fluxo) => { if (fluxo) fluxo.getTracks().forEach((trilha) => trilha.stop()) }
+
+// Põe o áudio de uma pessoa para tocar. Se o navegador bloquear o som automático, chama aoBloquear
+// (a tela então mostra o botão "Ativar o som").
+function tocarAudio(elemento, fluxo, aoBloquear) {
+  if (!elemento || elemento.srcObject === fluxo) return
+  elemento.srcObject = fluxo
+  const promessa = elemento.play()
+  if (promessa) promessa.catch((erro) => { if (erro && erro.name === 'NotAllowedError') aoBloquear() })
+}
 
 const classeBotao = (ligado) =>
   'flex items-center gap-2 rounded-lg border px-4 py-2 font-semibold transition-colors ' +
@@ -73,7 +83,7 @@ function escolherMiniatura(lista, minhaCamera) {
 }
 
 // Miniatura da chamada: aparece em todas as páginas do site e também na janela flutuante
-function MiniChamada({ miniatura, sala, total, micLigado, naJanela, aoAlternarMic, aoSair, aoAbrir, aoJanela }) {
+function MiniChamada({ miniatura, sala, total, micLigado, falandoNomes, naJanela, aoAlternarMic, aoSair, aoAbrir, aoJanela }) {
   const botao = 'grid h-9 w-9 place-items-center rounded-lg border text-sm transition-colors '
   const neutro = 'border-dark-border text-dark-text-1 hover:bg-dark-secondary'
   return (
@@ -86,7 +96,11 @@ function MiniChamada({ miniatura, sala, total, micLigado, naJanela, aoAlternarMi
         )}
         <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 text-xs text-white">{miniatura.legenda}</span>
       </div>
-      <p className="text-xs text-dark-text-2">Sala {sala}: {total} pessoa(s)</p>
+      {falandoNomes.length > 0 ? (
+        <p className="flex items-center gap-1 truncate text-xs font-semibold text-green-500"><i className="bi bi-mic-fill" /> {falandoNomes.join(', ')} falando</p>
+      ) : (
+        <p className="truncate text-xs text-dark-text-2">Sala {sala}: {total} pessoa(s)</p>
+      )}
       <div className="flex gap-1">
         <button onClick={aoAlternarMic} aria-label="Microfone" className={botao + (micLigado ? 'border-transparent bg-purple-600 text-white' : neutro)}>
           <i className={micLigado ? 'bi bi-mic-fill' : 'bi bi-mic-mute-fill'} />
@@ -130,6 +144,12 @@ export default function Chamada({ naPagina }) {
   const [rotulo, setRotulo] = useState('')
   const [slot, setSlot] = useState(null)         // espaço da rota /chamada, onde a página é desenhada
   const [janelaPip, setJanelaPip] = useState(null) // janela flutuante (Picture-in-Picture), se estiver aberta
+  const [falando, setFalando] = useState([])         // ids de quem está falando agora ('eu' = eu mesmo)
+  const [meuFluxo, setMeuFluxo] = useState(null)     // o meu microfone (para medir o meu volume)
+  const [microfones, setMicrofones] = useState([])   // microfones do computador
+  const [microfoneId, setMicrofoneId] = useState('') // o microfone que estou usando
+  const [problemaMic, setProblemaMic] = useState('') // aviso sobre o meu microfone ('' = tudo certo)
+  const [somBloqueado, setSomBloqueado] = useState(false) // o navegador bloqueou o som da chamada
 
   // Só encerra tudo quando o site inteiro fecha (trocar de página não derruba a chamada)
   useEffect(() => {
@@ -149,6 +169,30 @@ export default function Chamada({ naPagina }) {
     return () => window.removeEventListener('beforeunload', avisar)
   }, [naSala])
 
+  // Quem está falando: a cada 0,1 s o detector mede o volume do meu microfone e da voz de cada pessoa
+  useEffect(() => {
+    if (!naSala) return
+    const fluxos = { eu: meuFluxo }
+    Object.entries(pessoas).forEach(([id, p]) => { fluxos[id] = p.voz })
+    return observarFalas(fluxos, (quem) => {
+      setFalando((anterior) => (anterior.join() === quem.join() ? anterior : quem)) // só redesenha se mudou
+    })
+  }, [naSala, pessoas, meuFluxo])
+
+  // Lista de microfones. Os nomes só aparecem depois que o navegador libera o microfone (por isso só dentro da sala)
+  useEffect(() => {
+    if (!naSala || !navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return
+    async function listar() {
+      try {
+        const dispositivos = await navigator.mediaDevices.enumerateDevices()
+        setMicrofones(dispositivos.filter((d) => d.kind === 'audioinput'))
+      } catch { /* sem lista: segue com o microfone padrão */ }
+    }
+    listar()
+    navigator.mediaDevices.addEventListener('devicechange', listar) // plugou ou tirou um fone
+    return () => navigator.mediaDevices.removeEventListener('devicechange', listar)
+  }, [naSala])
+
   // ---------- Lista de pessoas na tela ----------
   function atualizarPessoa(id, dados) {
     setPessoas((anterior) => ({
@@ -165,12 +209,49 @@ export default function Chamada({ naPagina }) {
     })
   }
 
+  // Só apaga o áudio/vídeo de uma pessoa se ainda for aquele mesmo fluxo:
+  // uma chamada antiga que fecha atrasada não pode apagar a chamada nova
+  function removerFluxo(id, tipo, fluxo) {
+    setPessoas((anterior) => {
+      if (!anterior[id] || anterior[id][tipo] !== fluxo) return anterior
+      return { ...anterior, [id]: { ...anterior[id], [tipo]: null } }
+    })
+  }
+
   // ---------- Enviar a minha mídia ----------
   // Voz, câmera e tela vão em chamadas separadas: dá para ligar e desligar cada uma sem renegociar nada
-  function enviar(id, tipo, fluxo) {
+  function enviar(id, tipo, fluxo, tentativa = 0) {
+    const chave = id + '|' + tipo
     const chamada = peer.call(id, fluxo, { metadata: { tipo: tipo, nome: meuNome } })
-    saidas.set(id + '|' + tipo, chamada)
+    if (!chamada) { refazerEnvio(id, tipo, tentativa + 1); return } // sem conexão com o servidor agora
+    saidas.set(chave, chamada)
     setTimeout(() => limitarBitrate(chamada, tipo === 'tela' ? 3000000 : 1000000), 1000)
+
+    // Se a chamada cair ou não conectar, tenta de novo. Sem isso a pessoa ficaria sem ouvir (ou ver)
+    // você até alguém sair e entrar de novo.
+    let conectou = false
+    chamada.on('iceStateChanged', (estado) => { if (estado === 'connected' || estado === 'completed') conectou = true })
+    const seFalhar = () => {
+      if (!ativa || saidas.get(chave) !== chamada) return // saiu da chamada, ou ela foi encerrada de propósito
+      saidas.delete(chave)
+      chamada.close()
+      refazerEnvio(id, tipo, conectou ? 0 : tentativa + 1)
+    }
+    chamada.on('close', seFalhar)
+    setTimeout(() => { if (!conectou) seFalhar() }, 15000) // 15 s sem conectar: refaz a chamada
+  }
+
+  function refazerEnvio(id, tipo, tentativa) {
+    if (tentativa > 4) {
+      const oQue = tipo === 'voz' ? 'áudio' : (tipo === 'tela' ? 'compartilhamento de tela' : 'vídeo')
+      setAviso('Não consegui enviar o seu ' + oQue + ' para um participante. Peça para ele sair da sala e entrar de novo.')
+      return
+    }
+    setTimeout(() => {
+      const fluxo = tipo === 'voz' ? streamVoz : (tipo === 'camera' ? streamCamera : streamTela) // sempre o fluxo de agora
+      if (!ativa || !peer || !fluxo || !conexoes.has(id) || saidas.has(id + '|' + tipo)) return
+      enviar(id, tipo, fluxo, tentativa)
+    }, 2000)
   }
 
   function enviarTudoPara(id) {
@@ -181,7 +262,7 @@ export default function Chamada({ naPagina }) {
 
   function pararEnvio(tipo) {
     saidas.forEach((chamada, chave) => {
-      if (chave.endsWith('|' + tipo)) { chamada.close(); saidas.delete(chave) }
+      if (chave.endsWith('|' + tipo)) { saidas.delete(chave); chamada.close() }
     })
     // avisa os outros na hora para o quadro sumir
     conexoes.forEach((conexao) => { try { conexao.send({ parou: tipo }) } catch { /* ignora */ } })
@@ -204,7 +285,7 @@ export default function Chamada({ naPagina }) {
     conexao.on('close', () => {
       conexoes.delete(id)
       saidas.forEach((chamada, chave) => {
-        if (chave.startsWith(id + '|')) { chamada.close(); saidas.delete(chave) }
+        if (chave.startsWith(id + '|')) { saidas.delete(chave); chamada.close() }
       })
       removerPessoa(id)
     })
@@ -233,8 +314,9 @@ export default function Chamada({ naPagina }) {
       chamada.answer() // só recebe; a minha mídia vai em chamadas minhas
       const meta = chamada.metadata || {}
       const tipo = meta.tipo || 'voz'
-      chamada.on('stream', (fluxo) => atualizarPessoa(chamada.peer, { nome: meta.nome || 'Participante', [tipo]: fluxo }))
-      chamada.on('close', () => atualizarPessoa(chamada.peer, { [tipo]: null }))
+      let recebido = null // o fluxo que ESTA chamada trouxe
+      chamada.on('stream', (fluxo) => { recebido = fluxo; atualizarPessoa(chamada.peer, { nome: meta.nome || 'Participante', [tipo]: fluxo }) })
+      chamada.on('close', () => removerFluxo(chamada.peer, tipo, recebido))
     })
     verificador = setInterval(procurarOutros, 4000)
     procurarOutros()
@@ -315,6 +397,47 @@ export default function Chamada({ naPagina }) {
     setMicLigado(trilha.enabled)
   }
 
+  // Guarda o microfone em uso e fica de olho nele: avisa se ele parar (fone desconectado, mudo do sistema...)
+  function usarMicrofone(fluxo, idEscolhido) {
+    const trilha = fluxo.getAudioTracks()[0]
+    setMeuFluxo(fluxo)
+    setMicrofoneId(idEscolhido || trilha.getSettings().deviceId || '')
+    setProblemaMic('')
+    trilha.addEventListener('ended', () => {
+      if (streamVoz === fluxo) setProblemaMic('Seu microfone foi desconectado. Escolha outro na lista ao lado do botão do microfone.')
+    })
+    trilha.addEventListener('mute', () => {
+      if (streamVoz === fluxo) setProblemaMic('O sistema ou o navegador silenciou o seu microfone. Confira o botão de mudo do fone/teclado e as configurações de som.')
+    })
+    trilha.addEventListener('unmute', () => { if (streamVoz === fluxo) setProblemaMic('') })
+  }
+
+  // Troca o microfone sem sair da chamada: o áudio do microfone novo entra no lugar do antigo nas chamadas abertas
+  async function trocarMicrofone(idDispositivo) {
+    let novo
+    try {
+      novo = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: idDispositivo }, echoCancellation: true, noiseSuppression: true } })
+    } catch { setAviso('Não consegui usar esse microfone. Escolha outro.'); return }
+    const novaTrilha = novo.getAudioTracks()[0]
+    novaTrilha.enabled = micLigado // se eu estava no mudo, continuo no mudo
+    saidas.forEach((chamada, chave) => {
+      if (!chave.endsWith('|voz') || !chamada.peerConnection) return
+      chamada.peerConnection.getSenders().forEach((emissor) => {
+        if (emissor.track && emissor.track.kind === 'audio') emissor.replaceTrack(novaTrilha).catch(() => {})
+      })
+    })
+    pararFluxo(streamVoz)
+    streamVoz = novo
+    usarMicrofone(novo, idDispositivo)
+    setAviso('')
+  }
+
+  // O navegador só deixa tocar som depois de um clique: este botão libera o som da chamada
+  function ativarSom() {
+    document.querySelectorAll('audio[data-chamada]').forEach((audio) => { audio.play().catch(() => {}) })
+    setSomBloqueado(false)
+  }
+
   async function entrar(comCamera) {
     setAviso('')
     meuNome = nome.trim() || 'Alguém'
@@ -328,6 +451,7 @@ export default function Chamada({ naPagina }) {
       return
     }
     ativa = true
+    usarMicrofone(streamVoz)
     setSala(salaAtual); setMicLigado(true); setNaSala(true)
     if (comCamera) await ligarCamera()
     if (SERVIDOR_PEER) fetch('https://' + SERVIDOR_PEER + '/', { mode: 'no-cors' }).catch(() => {}) // acorda o servidor, se estiver dormindo
@@ -338,6 +462,7 @@ export default function Chamada({ naPagina }) {
     if (janelaPip) janelaPip.close()
     encerrarTudo()
     setNaSala(false); setPessoas({}); setMinhaCamera(null); setTelaLigada(false); setMicLigado(true); setRolagens([])
+    setFalando([]); setMeuFluxo(null); setMicrofones([]); setProblemaMic(''); setSomBloqueado(false)
   }
 
   function guardarRolagem(rolagem) {
@@ -404,16 +529,17 @@ export default function Chamada({ naPagina }) {
   const lista = Object.entries(pessoas)
   // "todos" = eu + os outros no mesmo formato, para qualquer layout desenhar igual
   const todos = [
-    { id: 'eu', nome: (nome.trim() || 'Alguém') + ' (você)', personagem: personagem.trim(), mestre: modo === 'rpg' && ehMestre, mesa: mesa.trim(), camera: minhaCamera, voz: null },
-    ...lista.map(([id, p]) => ({ id, ...p })),
+    { id: 'eu', nome: (nome.trim() || 'Alguém') + ' (você)', personagem: personagem.trim(), mestre: modo === 'rpg' && ehMestre, mesa: mesa.trim(), camera: minhaCamera, voz: null, falando: falando.includes('eu') },
+    ...lista.map(([id, p]) => ({ id, ...p, falando: falando.includes(id) })),
   ]
+  const falandoNomes = todos.filter((p) => p.falando).map((p) => (p.id === 'eu' ? 'Você' : p.nome))
   const telas = lista.filter(([, p]) => p.tela).map(([id, p]) => ({ id, nome: p.nome, tela: p.tela }))
   const painelDados = <PainelDados rolagens={rolagens} expressao={expressao} setExpressao={setExpressao} rotulo={rotulo} setRotulo={setRotulo} aoRolar={rolar} />
 
   const miniatura = escolherMiniatura(lista, minhaCamera)
   const painelMini = (naJanela) => (
     <MiniChamada
-      miniatura={miniatura} sala={sala} total={lista.length + 1} micLigado={micLigado} naJanela={naJanela}
+      miniatura={miniatura} sala={sala} total={lista.length + 1} micLigado={micLigado} falandoNomes={falandoNomes} naJanela={naJanela}
       aoAlternarMic={alternarMic} aoSair={sair} aoAbrir={() => navegar('/chamada')} aoJanela={abrirJanelaFlutuante}
     />
   )
@@ -426,6 +552,13 @@ export default function Chamada({ naPagina }) {
       <p className="mb-4 text-dark-text-2">Voz, vídeo e compartilhamento de tela direto no navegador, sem instalar nada.</p>
 
       {aviso && <p role="alert" className="mb-4 rounded-lg border border-red-500 p-3 text-sm">{aviso}</p>}
+      {problemaMic && <p role="alert" className="mb-4 rounded-lg border border-yellow-500 p-3 text-sm">{problemaMic}</p>}
+      {somBloqueado && (
+        <p role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-yellow-500 p-3 text-sm">
+          O navegador bloqueou o som da chamada.
+          <button onClick={ativarSom} className="rounded-lg bg-purple-600 px-3 py-1 font-semibold text-white hover:bg-purple-500">Ativar o som</button>
+        </p>
+      )}
 
       {!naSala ? (
         <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-dark-border bg-dark-card p-6">
@@ -497,6 +630,11 @@ export default function Chamada({ naPagina }) {
             <button onClick={alternarMic} className={classeBotao(micLigado)}>
               <i className={micLigado ? 'bi bi-mic-fill' : 'bi bi-mic-mute-fill'} /> {micLigado ? 'Microfone ligado' : 'Microfone mudo'}
             </button>
+            {microfones.length > 1 && (
+              <select value={microfoneId} onChange={(e) => trocarMicrofone(e.target.value)} aria-label="Escolher microfone" className="max-w-56 rounded-lg border border-dark-border bg-dark-secondary px-3 py-2 text-sm text-dark-text-1">
+                {microfones.map((m, i) => <option key={m.deviceId} value={m.deviceId}>{m.label || 'Microfone ' + (i + 1)}</option>)}
+              </select>
+            )}
             <button onClick={() => (minhaCamera ? desligarCamera() : ligarCamera())} className={classeBotao(!!minhaCamera)}>
               <i className={minhaCamera ? 'bi bi-camera-video-fill' : 'bi bi-camera-video-off-fill'} /> {minhaCamera ? 'Desligar câmera' : 'Ligar câmera'}
             </button>
@@ -528,8 +666,8 @@ export default function Chamada({ naPagina }) {
       {/* O áudio fica aqui, fora da página, para continuar tocando em qualquer rota ou aba */}
       {lista.map(([id, p]) => (
         <span key={id}>
-          {p.voz && <audio autoPlay ref={(el) => colocarFluxo(el, p.voz)} />}
-          {p.tela && <audio autoPlay ref={(el) => colocarFluxo(el, p.tela)} />}
+          {p.voz && <audio autoPlay data-chamada ref={(el) => tocarAudio(el, p.voz, () => setSomBloqueado(true))} />}
+          {p.tela && <audio autoPlay data-chamada ref={(el) => tocarAudio(el, p.tela, () => setSomBloqueado(true))} />}
         </span>
       ))}
 

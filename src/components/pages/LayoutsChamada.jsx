@@ -1,5 +1,5 @@
 // Layouts da chamada. Todos recebem a mesma lista de pessoas e só mudam como desenhar.
-//   todos: eu + os outros, cada um com { id, nome, personagem, mestre, mesa, camera, voz }
+//   todos: eu + os outros, cada um com { id, nome, personagem, mestre, mesa, camera, voz, falando }
 //   telas: telas compartilhadas, cada uma com { id, nome, tela }
 
 // Coloca o fluxo de vídeo/áudio no elemento assim que ele aparece na tela
@@ -7,10 +7,14 @@ export const colocarFluxo = (elemento, fluxo) => { if (elemento && elemento.srcO
 
 // Quadro de uma pessoa: câmera (ou a inicial do nome) e o áudio dela.
 // "fixo" usa as cores do layout de RPG, que tem visual fixo de propósito (estilo overlay de stream)
-export function Quadro({ legenda, camera, fixo }) {
-  const cores = fixo ? 'border-cyan-800 bg-slate-950' : 'border-dark-border bg-dark-card'
+// "falando" acende uma borda verde e mostra um microfone no canto: é assim que se vê quem está falando
+export function Quadro({ legenda, camera, fixo, falando }) {
+  const fundo = fixo ? 'bg-slate-950' : 'bg-dark-card'
+  const borda = falando
+    ? 'border-green-400 ring-2 ring-green-400/70 shadow-[0_0_16px_rgba(74,222,128,0.65)]'
+    : (fixo ? 'border-cyan-800' : 'border-dark-border')
   return (
-    <div className={'relative grid aspect-video place-items-center overflow-hidden rounded-xl border ' + cores}>
+    <div className={'relative grid aspect-video place-items-center overflow-hidden rounded-xl border transition-shadow duration-150 ' + fundo + ' ' + borda}>
       {camera ? (
         <video autoPlay playsInline muted ref={(el) => colocarFluxo(el, camera)} className="absolute inset-0 h-full w-full bg-black object-contain" />
       ) : (
@@ -18,7 +22,12 @@ export function Quadro({ legenda, camera, fixo }) {
           {(legenda[0] || '?').toUpperCase()}
         </div>
       )}
-      <span className="absolute inset-x-0 bottom-0 bg-black/60 px-2 py-0.5 text-center text-sm text-white">{legenda}</span>
+      {falando && (
+        <span title="Falando" className="absolute right-2 top-2 grid h-6 w-6 place-items-center rounded-full bg-green-500 text-xs text-white">
+          <i className="bi bi-mic-fill" />
+        </span>
+      )}
+      <span className={'absolute inset-x-0 bottom-0 px-2 py-0.5 text-center text-sm text-white ' + (falando ? 'bg-green-600/80' : 'bg-black/60')}>{legenda}</span>
     </div>
   )
 }
@@ -48,7 +57,7 @@ export function LayoutConversa({ todos, telas }) {
       {telas.map((t) => (
         <div key={t.id + 'tela'} className="col-span-full"><Palco telas={[t]} /></div>
       ))}
-      {todos.map((p) => <Quadro key={p.id} legenda={p.nome} camera={p.camera} voz={p.voz} />)}
+      {todos.map((p) => <Quadro key={p.id} legenda={p.nome} camera={p.camera} voz={p.voz} falando={p.falando} />)}
     </div>
   )
 }
@@ -59,7 +68,7 @@ export function LayoutApresentacao({ todos, telas, telaLigada }) {
     <div className="grid gap-3 lg:grid-cols-[1fr_220px]">
       <Palco telas={telas} telaLigada={telaLigada} vazio="Clique em Compartilhar tela para apresentar." />
       <div className="grid grid-cols-2 content-start gap-3 sm:grid-cols-3 lg:grid-cols-1">
-        {todos.map((p) => <Quadro key={p.id} legenda={p.nome} camera={p.camera} voz={p.voz} />)}
+        {todos.map((p) => <Quadro key={p.id} legenda={p.nome} camera={p.camera} voz={p.voz} falando={p.falando} />)}
       </div>
     </div>
   )
@@ -74,7 +83,7 @@ export function LayoutRpg({ todos, telas, telaLigada, painel }) {
     <div className="grid gap-3 rounded-2xl border-2 border-cyan-800 bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 p-3 text-white lg:grid-cols-[minmax(220px,24%)_1fr]">
       <div className="grid content-start gap-3">
         {mestre ? (
-          <Quadro fixo legenda={'Mestre ' + mestre.nome} camera={mestre.camera} voz={mestre.voz} />
+          <Quadro fixo legenda={'Mestre ' + mestre.nome} camera={mestre.camera} voz={mestre.voz} falando={mestre.falando} />
         ) : (
           <div className="grid aspect-video place-items-center rounded-xl border border-cyan-800 bg-slate-950 text-sm text-cyan-100/70">Sem mestre na sala</div>
         )}
@@ -82,7 +91,7 @@ export function LayoutRpg({ todos, telas, telaLigada, painel }) {
       </div>
       <Palco telas={telas} telaLigada={telaLigada} vazio="Aguardando alguém compartilhar a tela da mesa virtual." />
       <div className="col-span-full grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        {jogadores.map((p) => <Quadro fixo key={p.id} legenda={legenda(p)} camera={p.camera} voz={p.voz} />)}
+        {jogadores.map((p) => <Quadro fixo key={p.id} legenda={legenda(p)} camera={p.camera} voz={p.voz} falando={p.falando} />)}
       </div>
       {mestre && mestre.mesa && <p className="col-span-full text-right text-lg font-bold tracking-wide text-cyan-200">{mestre.mesa}</p>}
     </div>

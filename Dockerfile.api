@@ -1,0 +1,12 @@
+FROM php:8.3-cli
+
+RUN apt-get update && apt-get install -y --no-install-recommends libcurl4-openssl-dev \
+    && docker-php-ext-install pdo_mysql curl mbstring \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /var/www/html
+COPY api ./api
+RUN cp api/env.php.example api/env.php
+
+EXPOSE 10000
+CMD ["sh", "-c", "php -S 0.0.0.0:${PORT:-10000} -t /var/www/html"]

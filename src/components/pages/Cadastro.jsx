@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { registrarUsuario } from '../../services/localDb'
 import { useAuth } from '../../contexts/AuthContext'
 
@@ -50,7 +50,6 @@ function Field({ name, value, onChange, label, type = 'text', placeholder, requi
 export default function Cadastro() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation() // se veio da página da chamada, location.state.voltarPara diz para onde voltar
 
   const [form, setForm] = useState({ email: '', username: '', displayName: '', password: '', confirm: '' })
   const [carregando, setCarregando] = useState(false)
@@ -88,7 +87,7 @@ export default function Cadastro() {
       })
       const tokenFalso = 'local-' + usuario.id
       login(usuario, tokenFalso)
-      navigate(location.state?.voltarPara || '/')
+      navigate('/')
     } catch (err) {
       setErro(err.message || 'Erro ao criar conta')
     } finally {
@@ -141,7 +140,7 @@ export default function Cadastro() {
 
         <p className="text-center mt-6 text-xs text-purple-100/40">
           Já tem conta?{' '}
-          <Link to="/login" state={location.state} className="text-purple-400 font-bold hover:underline">
+          <Link to="/login" className="text-purple-400 font-bold hover:underline">
             Entrar
           </Link>
         </p>

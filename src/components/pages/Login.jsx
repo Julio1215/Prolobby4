@@ -1,12 +1,11 @@
 import { useState } from 'react'
-import { Link, useNavigate, useLocation } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { autenticarUsuario } from '../../services/localDb'
 import { useAuth } from '../../contexts/AuthContext'
 
 export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const location = useLocation() // se veio da página da chamada, location.state.voltarPara diz para onde voltar
 
   const [form, setForm] = useState({ login: '', password: '' })
   const [carregando, setCarregando] = useState(false)
@@ -31,7 +30,7 @@ export default function Login() {
       const usuario = autenticarUsuario(form)
       const tokenFalso = 'local-' + usuario.id
       login(usuario, tokenFalso)
-      navigate(location.state?.voltarPara || '/')
+      navigate('/')
     } catch (err) {
       setErro(err.message || 'Erro ao fazer login')
     } finally {
@@ -130,7 +129,7 @@ export default function Login() {
 
         <p className="text-center mt-6 text-xs text-purple-100/45">
           Não tem conta?{' '}
-          <Link to="/register" state={location.state} className="text-purple-400 font-bold hover:underline">
+          <Link to="/register" className="text-purple-400 font-bold hover:underline">
             Criar conta grátis
           </Link>
         </p>

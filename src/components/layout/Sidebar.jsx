@@ -1,6 +1,5 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { useAuth } from '../../contexts/AuthContext'
 
 // ============================================
 // NAV ITEMS — espelha o índice "Navegação" combinado
@@ -31,7 +30,7 @@ const NAV_ITEMS = [
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3.5 18.5 3.5-9.5L10.5 12 12 6l1.5 6 3.5-3 3.5 9.5"/><path d="M3 18h18"/></svg>,
   },
   {
-    to: '/chamada', label: 'Chamada', precisaLogin: true,
+    to: '/chamada', label: 'Chamada',
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>,
   },
   {
@@ -59,7 +58,6 @@ const ESPORTS_SUB_ITEMS = [
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
   const location = useLocation()
-  const { usuario } = useAuth() // quem não fez login vê um cadeado nos itens que precisam de login
 
   // A seção E-Sports fica aberta automaticamente quando o usuário está em qualquer rota /esports/*
   const esportsAtivo = location.pathname.startsWith('/esports')
@@ -108,7 +106,7 @@ export default function Sidebar() {
               />
             )
           }
-          return <ItemMenu key={item.to} item={item} collapsed={collapsed} bloqueado={item.precisaLogin && !usuario} />
+          return <ItemMenu key={item.to} item={item} collapsed={collapsed} />
         })}
       </nav>
 
@@ -135,24 +133,13 @@ function BotaoRecolher({ collapsed, onClick }) {
   )
 }
 
-// Cadeado pequeno que aparece nos itens que precisam de login
-function Cadeado({ tamanho = 13 }) {
-  return (
-    <svg width={tamanho} height={tamanho} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" aria-label="Precisa de login">
-      <rect x="3" y="11" width="18" height="11" rx="2" />
-      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
-  )
-}
-
 // Um item normal do menu (Home, Notícias, Comunidade, Fichas de RPG...)
-// "bloqueado" = o item precisa de login e a pessoa ainda não entrou (continua clicável: a página explica)
-function ItemMenu({ item, collapsed, bloqueado }) {
+function ItemMenu({ item, collapsed }) {
   return (
     <NavLink
       to={item.comingSoon ? '#' : item.to}
       end={item.end}
-      title={collapsed ? item.label + (bloqueado ? ' (precisa de login)' : '') : (bloqueado ? 'Precisa de login' : undefined)}
+      title={collapsed ? item.label : undefined}
       onClick={item.comingSoon ? (e) => e.preventDefault() : undefined}
       className={`no-underline ${item.comingSoon ? 'cursor-default' : 'cursor-pointer'}`}
     >
@@ -183,11 +170,6 @@ function ItemMenu({ item, collapsed, bloqueado }) {
               </span>
             )}
 
-            {!collapsed && bloqueado && <Cadeado />}
-            {collapsed && bloqueado && (
-              <span className="absolute bottom-0.5 right-1 text-dark-text-3"><Cadeado tamanho={10} /></span>
-            )}
-
             {!collapsed && item.badge && (
               <span className="py-[0.1rem] px-[0.4rem] rounded-full text-[0.55rem] font-extrabold bg-linear-to-br from-[#7c3aed] to-[#bf00ff] text-white tracking-[0.04em]">
                 {item.badge}
@@ -202,7 +184,7 @@ function ItemMenu({ item, collapsed, bloqueado }) {
 
             {collapsed && (
               <span className="absolute left-[110%] top-1/2 -translate-y-1/2 bg-dark-card border border-dark-border rounded-lg py-[0.3rem] px-[0.65rem] text-xs font-semibold whitespace-nowrap pointer-events-none opacity-0 z-[100] shadow-[0_4px_16px_rgba(0,0,0,0.4)] transition-opacity duration-150 group-hover:opacity-100">
-                {item.label}{item.comingSoon ? ' (em breve)' : ''}{bloqueado ? ' (precisa de login)' : ''}
+                {item.label}{item.comingSoon ? ' (em breve)' : ''}
               </span>
             )}
           </div>

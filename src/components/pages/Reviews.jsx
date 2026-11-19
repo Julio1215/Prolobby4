@@ -8,7 +8,6 @@ import React, { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { listarJogos, listarReviews, buscarCapasQueFaltam } from '../../services/conteudoApi';
 import CapaDoJogo from '../ui/CapaDoJogo';
-import { notasDoJogo } from '../../data/notasIniciais';
 
 const CATALOGO_JOGOS = [
   { id: 1,  name: 'Elden Ring',imagem: 'https://imgs.search.brave.com/SURZwdns-bi9yiBN-LQxfBHwHYcXGnG0yuFaYSvD0VA/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9wcmV2/aWV3LnJlZGQuaXQv/ZWxkZW4tcmluZy1j/b3Zlci1pbnNwaXJh/dGlvbnMtdjAtN211/b3NqNnU3czRlMS5q/cGc_d2lkdGg9Mzg0/MCZmb3JtYXQ9cGpw/ZyZhdXRvPXdlYnAm/cz0yMGUwMzg3ZjVh/YmFlY2FiYjZjMTdk/ZWY0ZTY0MmNjNWNl/ZTUxNWQz', rating: 4.6, metacritic: 96, released: '2022-02-25', playtime: 55, genres: ['RPG', 'Action'], description_raw: 'Obra-prima do gênero Soulslike que redefiniu os mundos abertos ao unir o combate exigente da FromSoftware à liberdade total de exploração orgânica e não-linear nas Terras Intermédias.' },
@@ -89,7 +88,8 @@ export default function Reviews() {
           name: jogo.titulo,
           imagem: jogo.capaUrl,
           background_image: jogo.capaUrl,
-          ...notasDoJogo(jogo),
+          rating: jogo.notaMedia ? jogo.notaMedia / 2 : 0,
+          metacritic: null,
           released: jogo.anoLancamento ? String(jogo.anoLancamento) : '',
           playtime: jogo.horasPrincipal || 0,
           genres: [jogo.genero],
@@ -168,7 +168,7 @@ export default function Reviews() {
 
               <div className="grid grid-cols-2 gap-4 text-xs bg-dark-secondary/50 p-4 rounded-xl border border-dark-border/40 text-dark-text-2">
                 <p><strong>📅 Lançamento:</strong> {jogoSelecionado.released}</p>
-                <p><strong>⭐ Avaliação:</strong> {jogoSelecionado.rating != null ? `${Number(jogoSelecionado.rating).toFixed(1)}/5` : 'sem nota ainda'}</p>
+                <p><strong>⭐ Avaliação:</strong> {jogoSelecionado.rating}/5</p>
                 <p className="col-span-2 truncate"><strong>🖥️ Plataformas:</strong> {jogoSelecionado.platforms?.map(p => p.platform.name).join(", ")}</p>
               </div>
 
@@ -230,7 +230,7 @@ export default function Reviews() {
               </div>
               <div className="flex justify-between items-center text-xs text-dark-text-2 px-3 pb-3 pt-2">
                 <span className="text-purple-300 font-medium"><i className="bi bi-journal-text"></i> Ler Review</span>
-                <span>⭐ {game.rating != null ? Number(game.rating).toFixed(1) : '—'}</span>
+                <span>⭐ {game.rating}</span>
               </div>
             </div>
           ))}

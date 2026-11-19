@@ -4,6 +4,10 @@ import { useNavigate } from 'react-router-dom'
 import Peer from 'peerjs'
 import { LayoutConversa, LayoutApresentacao, LayoutRpg, PainelDados, colocarFluxo } from './LayoutsChamada.jsx'
 import { observarFalas } from '../../utils/detectorDeFala.js'
+import { useAuth } from '../../contexts/AuthContext'
+import { tocarEfeito, ligarEfeitos, efeitosLigados } from '../../utils/efeitosSonoros.js'
+import { definirLigacao, desligarPlayer, cederParaOutro } from '../../utils/playerMusica.js'
+import BotDeMusica from './BotDeMusica.jsx'
 
 const PREFIXO = 'tl-c-'   // prefixo dos ids no PeerJS
 const MAX_VAGAS = 6       // malha P2P: acima de 5 ou 6 pessoas a internet de cada um não aguenta
@@ -28,8 +32,10 @@ const MODOS = {
 
 // Objetos do PeerJS ficam fora do componente: mexer neles não precisa redesenhar a tela
 let peer = null, minhaVaga = 0, verificador = null, salaAtual = '', meuNome = '', ativa = false
-let meuPerfil = { nome: '', personagem: '', mestre: false, mesa: '' }
-let streamVoz = null, streamCamera = null, streamTela = null
+let meuPerfil = { nome: '', personagem: '', mestre: false, mesa: '', mic: true }
+let streamVoz = null, streamCamera = null, streamTela = null, streamMusica = null
+let minhaMusica = null   // o que o meu bot de música está tocando: { por, titulo, tocando, desde }
+let minhaEntrada = 0     // quando eu entrei na sala (os efeitos sonoros de "entrou" usam isso)
 const conexoes = new Map()   // id remoto -> conexão de dados aberta
 const tentando = new Set()   // ids que estou tentando conectar agora
 const saidas = new Map()     // "id|tipo" -> chamada que eu fiz para aquela pessoa
@@ -46,6 +52,8 @@ function tocarAudio(elemento, fluxo, aoBloquear) {
   if (promessa) promessa.catch((erro) => { if (erro && erro.name === 'NotAllowedError') aoBloquear() })
 }
 
+// O áudio da chamada é feito para voz. Para a música, pede ao Opus som estéreo e mais qualidade.
+const somDeMusica = (sdp) => sdp.replace('useinbandfec=1', 'useinbandfec=1; stereo=1; maxaveragebitrate=128000')
 const classeBotao = (ligado) =>
   'flex items-center gap-2 rounded-lg border px-4 py-2 font-semibold transition-colors ' +
   (ligado ? 'border-transparent bg-purple-600 text-white' : 'border-dark-border text-dark-text-1 hover:bg-dark-secondary')
@@ -66,8 +74,9 @@ function limitarBitrate(chamada, bps) {
 function encerrarTudo() {
   ativa = false
   clearInterval(verificador)
-  pararFluxo(streamVoz); pararFluxo(streamCamera); pararFluxo(streamTela)
-  streamVoz = null; streamCamera = null; streamTela = null
+  desligarPlayer(false) // para o bot de música (sem avisar a rede: tudo está sendo encerrado)
+  pararFluxo(streamVoz); pararFluxo(streamCamera); pararFluxo(streamTela); pararFluxo(streamMusica)
+  streamVoz = null; streamCamera = null; streamTela = null; streamMusica = null; minhaMusica = null
   if (peer) peer.destroy()
   peer = null; conexoes.clear(); tentando.clear(); saidas.clear()
 }
@@ -83,7 +92,7 @@ function escolherMiniatura(lista, minhaCamera) {
 }
 
 // Miniatura da chamada: aparece em todas as páginas do site e também na janela flutuante
-function MiniChamada({ miniatura, sala, total, micLigado, falandoNomes, naJanela, aoAlternarMic, aoSair, aoAbrir, aoJanela }) {
+function MiniChamada({ miniatura, sala, total, micLigado, falandoNomes, musicaAgora, naJanela, aoAlternarMic, aoSair, aoAbrir, aoJanela }) {
   const botao = 'grid h-9 w-9 place-items-center rounded-lg border text-sm transition-colors '
   const neutro = 'border-dark-border text-dark-text-1 hover:bg-dark-secondary'
   return (
@@ -101,6 +110,7 @@ function MiniChamada({ miniatura, sala, total, micLigado, falandoNomes, naJanela
       ) : (
         <p className="truncate text-xs text-dark-text-2">Sala {sala}: {total} pessoa(s)</p>
       )}
+      {musicaAgora && <p className="flex items-center gap-1 truncate text-xs text-purple-400"><i className="bi bi-music-note-beamed" /> {musicaAgora}</p>}
       <div className="flex gap-1">
         <button onClick={aoAlternarMic} aria-label="Microfone" className={botao + (micLigado ? 'border-transparent bg-purple-600 text-white' : neutro)}>
           <i className={micLigado ? 'bi bi-mic-fill' : 'bi bi-mic-mute-fill'} />
@@ -123,7 +133,9 @@ function MiniChamada({ miniatura, sala, total, micLigado, falandoNomes, naJanela
 // por isso a chamada continua ao trocar de página.
 export default function Chamada({ naPagina }) {
   const navegar = useNavigate()
-  const [nome, setNome] = useState(() => localStorage.getItem('tl_nome') || '')
+  const { usuario } = useAuth()
+  const nomeDeUsuario = (usuario && (usuario.username || usuario.displayName)) || 'Alguém' // o nome vem do login
+  const [apelido, setApelido] = useState(() => localStorage.getItem('tl_apelido') || '')    // opcional: vazio = vale o nome de usuário
   const [sala, setSala] = useState(() => limparCodigo(new URLSearchParams(window.location.search).get('sala')))
   const [naSala, setNaSala] = useState(false)
   const [aviso, setAviso] = useState('')
@@ -150,11 +162,21 @@ export default function Chamada({ naPagina }) {
   const [microfoneId, setMicrofoneId] = useState('') // o microfone que estou usando
   const [problemaMic, setProblemaMic] = useState('') // aviso sobre o meu microfone ('' = tudo certo)
   const [somBloqueado, setSomBloqueado] = useState(false) // o navegador bloqueou o som da chamada
+  const [efeitos, setEfeitos] = useState(efeitosLigados)    // efeitos sonoros (entrar, sair, mutar) ligados?
+  const [botAberto, setBotAberto] = useState(false)         // painel do bot de música aberto?
+  const [minhaMusicaInfo, setMinhaMusicaInfo] = useState(null) // o que o MEU bot está tocando
+  const [avisoMusica, setAvisoMusica] = useState('')        // recado do bot (ex.: "fulano assumiu o bot")
+  const [volumeMusica, setVolumeMusica] = useState(() => Number(localStorage.getItem('tl_volume_musica') || 0.8)) // volume da música dos outros, só para mim
 
   // Só encerra tudo quando o site inteiro fecha (trocar de página não derruba a chamada)
   useEffect(() => {
     return () => encerrarTudo()
   }, [])
+
+  // Se a chamada for desmontada (ex.: a pessoa saiu da conta) com a janela flutuante aberta, fecha a janela também
+  useEffect(() => {
+    return () => { if (janelaPip) janelaPip.close() }
+  }, [janelaPip])
 
   // A página da chamada é desenhada dentro do espaço reservado pela rota /chamada
   useEffect(() => {
@@ -197,7 +219,7 @@ export default function Chamada({ naPagina }) {
   function atualizarPessoa(id, dados) {
     setPessoas((anterior) => ({
       ...anterior,
-      [id]: { nome: 'Participante', personagem: '', mestre: false, mesa: '', voz: null, camera: null, tela: null, ...anterior[id], ...dados },
+      [id]: { nome: 'Participante', personagem: '', mestre: false, mesa: '', mic: true, voz: null, camera: null, tela: null, musica: null, musicaInfo: null, ...anterior[id], ...dados },
     }))
   }
 
@@ -243,12 +265,12 @@ export default function Chamada({ naPagina }) {
 
   function refazerEnvio(id, tipo, tentativa) {
     if (tentativa > 4) {
-      const oQue = tipo === 'voz' ? 'áudio' : (tipo === 'tela' ? 'compartilhamento de tela' : 'vídeo')
+      const oQue = tipo === 'voz' ? 'áudio' : (tipo === 'tela' ? 'compartilhamento de tela' : (tipo === 'musica' ? 'som do bot de música' : 'vídeo'))
       setAviso('Não consegui enviar o seu ' + oQue + ' para um participante. Peça para ele sair da sala e entrar de novo.')
       return
     }
     setTimeout(() => {
-      const fluxo = tipo === 'voz' ? streamVoz : (tipo === 'camera' ? streamCamera : streamTela) // sempre o fluxo de agora
+      const fluxo = { voz: streamVoz, camera: streamCamera, tela: streamTela, musica: streamMusica }[tipo] // sempre o fluxo de agora
       if (!ativa || !peer || !fluxo || !conexoes.has(id) || saidas.has(id + '|' + tipo)) return
       enviar(id, tipo, fluxo, tentativa)
     }, 2000)
@@ -258,6 +280,7 @@ export default function Chamada({ naPagina }) {
     if (streamVoz) enviar(id, 'voz', streamVoz)
     if (streamCamera) enviar(id, 'camera', streamCamera)
     if (streamTela) enviar(id, 'tela', streamTela)
+    if (streamMusica) enviar(id, 'musica', streamMusica)
   }
 
   function pararEnvio(tipo) {
@@ -269,17 +292,23 @@ export default function Chamada({ naPagina }) {
   }
 
   // ---------- Conexões entre as pessoas ----------
-  function registrarConexao(conexao) {
+  // euIniciei = fui eu que procurei a pessoa (ela já estava na sala quando eu cheguei)
+  function registrarConexao(conexao, euIniciei) {
     const id = conexao.peer
     if (conexoes.has(id)) { conexao.close(); return }
     conexoes.set(id, conexao)
     atualizarPessoa(id, {})
-    conexao.send({ perfil: meuPerfil })   // diz quem eu sou: nome, personagem, se sou o mestre
+    // som de "entrou": só para quem chegou depois de mim (quem já estava na sala quando eu entrei não conta)
+    if (!euIniciei || Date.now() - minhaEntrada > 8000) tocarEfeito('entrou')
+    conexao.send({ perfil: meuPerfil })   // diz quem eu sou: nome, personagem, se sou o mestre, se estou no mudo
+    if (minhaMusica) conexao.send({ musica: minhaMusica }) // e o que o meu bot de música está tocando
     enviarTudoPara(id)
     conexao.on('data', (mensagem) => {
       if (!mensagem) return
-      if (mensagem.parou) atualizarPessoa(id, { [mensagem.parou]: null })
+      if (mensagem.parou) atualizarPessoa(id, { [mensagem.parou]: null, ...(mensagem.parou === 'musica' ? { musicaInfo: null } : {}) })
       if (mensagem.perfil) atualizarPessoa(id, mensagem.perfil)
+      if (typeof mensagem.mic === 'boolean') { atualizarPessoa(id, { mic: mensagem.mic }); tocarEfeito(mensagem.mic ? 'desmutou' : 'mutou') }
+      if (mensagem.musica) receberMusica(id, mensagem.musica)
       if (mensagem.rolagem) guardarRolagem(mensagem.rolagem)
     })
     conexao.on('close', () => {
@@ -288,6 +317,7 @@ export default function Chamada({ naPagina }) {
         if (chave.startsWith(id + '|')) { saidas.delete(chave); chamada.close() }
       })
       removerPessoa(id)
+      if (ativa) tocarEfeito('saiu')
     })
   }
 
@@ -299,7 +329,7 @@ export default function Chamada({ naPagina }) {
       tentando.delete(id)
       if (!conexao.open) conexao.close()
     }, 6000)
-    conexao.on('open', () => { clearTimeout(limite); tentando.delete(id); registrarConexao(conexao) })
+    conexao.on('open', () => { clearTimeout(limite); tentando.delete(id); registrarConexao(conexao, true) })
   }
 
   // Regra simples: eu só procuro quem tem vaga menor que a minha; quem tem vaga maior me procura
@@ -311,9 +341,9 @@ export default function Chamada({ naPagina }) {
   function configurarPeer() {
     peer.on('connection', (conexao) => conexao.on('open', () => registrarConexao(conexao)))
     peer.on('call', (chamada) => {
-      chamada.answer() // só recebe; a minha mídia vai em chamadas minhas
       const meta = chamada.metadata || {}
       const tipo = meta.tipo || 'voz'
+      chamada.answer(undefined, tipo === 'musica' ? { sdpTransform: somDeMusica } : undefined) // só recebe; a minha mídia vai em chamadas minhas
       let recebido = null // o fluxo que ESTA chamada trouxe
       chamada.on('stream', (fluxo) => { recebido = fluxo; atualizarPessoa(chamada.peer, { nome: meta.nome || 'Participante', [tipo]: fluxo }) })
       chamada.on('close', () => removerFluxo(chamada.peer, tipo, recebido))
@@ -394,8 +424,57 @@ export default function Chamada({ naPagina }) {
   function alternarMic() {
     const trilha = streamVoz.getAudioTracks()[0]
     trilha.enabled = !trilha.enabled
+    meuPerfil.mic = trilha.enabled // quem entrar depois já vê se estou no mudo
+    conexoes.forEach((conexao) => { try { conexao.send({ mic: trilha.enabled }) } catch { /* ignora */ } })
+    tocarEfeito(trilha.enabled ? 'desmutou' : 'mutou')
     setMicLigado(trilha.enabled)
   }
+
+  // ---------- Efeitos sonoros e bot de música ----------
+  function alternarEfeitos() {
+    const novo = !efeitos
+    ligarEfeitos(novo)
+    setEfeitos(novo)
+    if (novo) tocarEfeito('desmutou') // um "plim" para mostrar que voltou
+  }
+
+  function mudarVolumeMusica(volume) {
+    setVolumeMusica(volume)
+    localStorage.setItem('tl_volume_musica', String(volume))
+  }
+
+  // O player (playerMusica.js) chama estas três quando o MEU bot liga, muda de música ou desliga
+  function ligarMusica(fluxo) {
+    streamMusica = fluxo
+    conexoes.forEach((conexao, id) => enviar(id, 'musica', fluxo))
+  }
+
+  function mudarMusica(info) {
+    minhaMusica = { ...info, por: meuNome }
+    setMinhaMusicaInfo(minhaMusica)
+    conexoes.forEach((conexao) => { try { conexao.send({ musica: minhaMusica }) } catch { /* ignora */ } })
+  }
+
+  function desligarMusica() {
+    pararFluxo(streamMusica)
+    streamMusica = null; minhaMusica = null
+    setMinhaMusicaInfo(null)
+    pararEnvio('musica')
+  }
+
+  // Outra pessoa ligou o bot de música: guarda o que ela toca. Quem ligou por último assume o bot.
+  function receberMusica(id, info) {
+    atualizarPessoa(id, { musicaInfo: info })
+    if (cederParaOutro(info.desde || 0)) {
+      setAvisoMusica((info.por || 'Alguém') + ' assumiu o bot de música.')
+      setTimeout(() => setAvisoMusica(''), 8000)
+    }
+  }
+
+  // Liga o player do bot de música (playerMusica.js) com a rede da chamada
+  useEffect(() => {
+    definirLigacao({ aoLigar: ligarMusica, aoMudarInfo: mudarMusica, aoDesligar: desligarMusica })
+  })
 
   // Guarda o microfone em uso e fica de olho nele: avisa se ele parar (fone desconectado, mudo do sistema...)
   function usarMicrofone(fluxo, idEscolhido) {
@@ -440,10 +519,10 @@ export default function Chamada({ naPagina }) {
 
   async function entrar(comCamera) {
     setAviso('')
-    meuNome = nome.trim() || 'Alguém'
-    meuPerfil = { nome: meuNome, personagem: personagem.trim(), mestre: modo === 'rpg' && ehMestre, mesa: mesa.trim() }
+    meuNome = apelido.trim() || nomeDeUsuario // o nome vem do login; o apelido é opcional
+    meuPerfil = { nome: meuNome, personagem: personagem.trim(), mestre: modo === 'rpg' && ehMestre, mesa: mesa.trim(), mic: true }
     salaAtual = limparCodigo(sala) || Math.random().toString(36).slice(2, 8)
-    localStorage.setItem('tl_nome', meuNome)
+    localStorage.setItem('tl_apelido', apelido.trim())
     try {
       streamVoz = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
     } catch {
@@ -451,6 +530,8 @@ export default function Chamada({ naPagina }) {
       return
     }
     ativa = true
+    minhaEntrada = Date.now()
+    tocarEfeito('entrou')
     usarMicrofone(streamVoz)
     setSala(salaAtual); setMicLigado(true); setNaSala(true)
     if (comCamera) await ligarCamera()
@@ -461,8 +542,10 @@ export default function Chamada({ naPagina }) {
   function sair() {
     if (janelaPip) janelaPip.close()
     encerrarTudo()
+    tocarEfeito('saiu')
     setNaSala(false); setPessoas({}); setMinhaCamera(null); setTelaLigada(false); setMicLigado(true); setRolagens([])
     setFalando([]); setMeuFluxo(null); setMicrofones([]); setProblemaMic(''); setSomBloqueado(false)
+    setMinhaMusicaInfo(null); setBotAberto(false); setAvisoMusica('')
   }
 
   function guardarRolagem(rolagem) {
@@ -529,17 +612,21 @@ export default function Chamada({ naPagina }) {
   const lista = Object.entries(pessoas)
   // "todos" = eu + os outros no mesmo formato, para qualquer layout desenhar igual
   const todos = [
-    { id: 'eu', nome: (nome.trim() || 'Alguém') + ' (você)', personagem: personagem.trim(), mestre: modo === 'rpg' && ehMestre, mesa: mesa.trim(), camera: minhaCamera, voz: null, falando: falando.includes('eu') },
-    ...lista.map(([id, p]) => ({ id, ...p, falando: falando.includes(id) })),
+    { id: 'eu', nome: (apelido.trim() || nomeDeUsuario) + ' (você)', personagem: personagem.trim(), mestre: modo === 'rpg' && ehMestre, mesa: mesa.trim(), camera: minhaCamera, voz: null, falando: falando.includes('eu'), mudo: !micLigado },
+    ...lista.map(([id, p]) => ({ id, ...p, falando: falando.includes(id), mudo: p.mic === false })),
   ]
   const falandoNomes = todos.filter((p) => p.falando).map((p) => (p.id === 'eu' ? 'Você' : p.nome))
+  // Bot de música de OUTRA pessoa (o meu fica em minhaMusicaInfo)
+  const botDeOutro = lista.find(([, p]) => p.musicaInfo)
+  const musicaDeOutro = botDeOutro ? { ...botDeOutro[1].musicaInfo, por: botDeOutro[1].musicaInfo.por || botDeOutro[1].nome } : null
+  const musicaAgora = (minhaMusicaInfo && minhaMusicaInfo.titulo) || (musicaDeOutro && musicaDeOutro.titulo) || ''
   const telas = lista.filter(([, p]) => p.tela).map(([id, p]) => ({ id, nome: p.nome, tela: p.tela }))
   const painelDados = <PainelDados rolagens={rolagens} expressao={expressao} setExpressao={setExpressao} rotulo={rotulo} setRotulo={setRotulo} aoRolar={rolar} />
 
   const miniatura = escolherMiniatura(lista, minhaCamera)
   const painelMini = (naJanela) => (
     <MiniChamada
-      miniatura={miniatura} sala={sala} total={lista.length + 1} micLigado={micLigado} falandoNomes={falandoNomes} naJanela={naJanela}
+      miniatura={miniatura} sala={sala} total={lista.length + 1} micLigado={micLigado} falandoNomes={falandoNomes} musicaAgora={musicaAgora} naJanela={naJanela}
       aoAlternarMic={alternarMic} aoSair={sair} aoAbrir={() => navegar('/chamada')} aoJanela={abrirJanelaFlutuante}
     />
   )
@@ -553,6 +640,7 @@ export default function Chamada({ naPagina }) {
 
       {aviso && <p role="alert" className="mb-4 rounded-lg border border-red-500 p-3 text-sm">{aviso}</p>}
       {problemaMic && <p role="alert" className="mb-4 rounded-lg border border-yellow-500 p-3 text-sm">{problemaMic}</p>}
+      {avisoMusica && <p role="alert" className="mb-4 rounded-lg border border-yellow-500 p-3 text-sm">{avisoMusica}</p>}
       {somBloqueado && (
         <p role="alert" className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-yellow-500 p-3 text-sm">
           O navegador bloqueou o som da chamada.
@@ -562,13 +650,14 @@ export default function Chamada({ naPagina }) {
 
       {!naSala ? (
         <div className="mx-auto grid max-w-md gap-4 rounded-xl border border-dark-border bg-dark-card p-6">
+          <p className="text-sm text-dark-text-2">Você vai entrar como <strong className="text-dark-text-1">{nomeDeUsuario}</strong></p>
           <label className="grid gap-1 text-sm font-semibold">
-            Seu nome
+            <span>Apelido <span className="font-normal text-dark-text-3">(opcional)</span></span>
             <input
-              value={nome}
-              onChange={(e) => setNome(e.target.value)}
+              value={apelido}
+              onChange={(e) => setApelido(e.target.value)}
               maxLength={30}
-              placeholder="Ex.: Julio"
+              placeholder={'Se deixar vazio, usa ' + nomeDeUsuario}
               className="rounded-lg border border-dark-border bg-dark-secondary px-3 py-2 font-normal text-dark-text-1 placeholder:text-dark-text-3"
             />
           </label>
@@ -609,6 +698,9 @@ export default function Chamada({ naPagina }) {
               )}
             </>
           )}
+          <label className="flex items-center gap-2 text-sm font-semibold">
+            <input type="checkbox" checked={efeitos} onChange={alternarEfeitos} /> Efeitos sonoros (entrar, sair, mutar)
+          </label>
           <button onClick={() => entrar(false)} className="rounded-lg bg-purple-600 px-4 py-2 font-semibold text-white hover:bg-purple-500">
             <i className="bi bi-mic-fill" /> Entrar só com voz
           </button>
@@ -646,6 +738,12 @@ export default function Chamada({ naPagina }) {
                 <i className={m.icone} /> {m.nome}
               </button>
             ))}
+            <button onClick={() => setBotAberto(!botAberto)} aria-expanded={botAberto} className={classeBotao(botAberto || !!minhaMusicaInfo || !!musicaDeOutro)}>
+              <i className="bi bi-music-note-beamed" /> Bot de música
+            </button>
+            <button onClick={alternarEfeitos} aria-pressed={efeitos} className={classeBotao(efeitos)}>
+              <i className={efeitos ? 'bi bi-bell-fill' : 'bi bi-bell-slash-fill'} /> {efeitos ? 'Efeitos: ligados' : 'Efeitos: desligados'}
+            </button>
             <button onClick={abrirJanelaFlutuante} className={classeBotao(!!janelaPip)}>
               <i className="bi bi-pip" /> {janelaPip ? 'Fechar janela flutuante' : 'Janela flutuante'}
             </button>
@@ -656,6 +754,12 @@ export default function Chamada({ naPagina }) {
               <i className="bi bi-box-arrow-right" /> Sair
             </button>
           </div>
+
+          {botAberto && (
+            <div className="mt-4">
+              <BotDeMusica musicaDeOutro={musicaDeOutro} volumeMusica={volumeMusica} aoMudarVolumeMusica={mudarVolumeMusica} />
+            </div>
+          )}
         </>
       )}
     </div>
@@ -668,6 +772,7 @@ export default function Chamada({ naPagina }) {
         <span key={id}>
           {p.voz && <audio autoPlay data-chamada ref={(el) => tocarAudio(el, p.voz, () => setSomBloqueado(true))} />}
           {p.tela && <audio autoPlay data-chamada ref={(el) => tocarAudio(el, p.tela, () => setSomBloqueado(true))} />}
+          {p.musica && <audio autoPlay data-chamada data-musica ref={(el) => { tocarAudio(el, p.musica, () => setSomBloqueado(true)); if (el) el.volume = volumeMusica }} />}
         </span>
       ))}
 

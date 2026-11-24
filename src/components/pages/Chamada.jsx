@@ -6,6 +6,7 @@ import { LayoutConversa, LayoutApresentacao, LayoutRpg, PainelDados, colocarFlux
 import { observarFalas } from '../../utils/detectorDeFala.js'
 import { useAuth } from '../../contexts/AuthContext'
 import { tocarEfeito, ligarEfeitos, efeitosLigados, usarSaida } from '../../utils/efeitosSonoros.js'
+import { iniciarPulso } from '../../utils/pulsoDeFundo.js'
 import { definirLigacao, desligarPlayer, cederParaOutro } from '../../utils/playerMusica.js'
 import BotDeMusica from './BotDeMusica.jsx'
 
@@ -147,7 +148,7 @@ function limitarBitrate(chamada, bps) {
 
 function encerrarTudo() {
   ativa = false
-  clearInterval(verificador)
+  if (typeof verificador === 'function') verificador() // para o relógio de fundo
   desligarPlayer(false) // para o bot de música (sem avisar a rede: tudo está sendo encerrado)
   pararFluxo(streamVoz); pararFluxo(streamCamera); pararFluxo(streamTela); pararFluxo(streamMusica)
   streamVoz = null; streamCamera = null; streamTela = null; streamMusica = null; minhaMusica = null
@@ -216,6 +217,7 @@ export default function Chamada({ naPagina }) {
   const [naSala, setNaSala] = useState(false)
   const [aviso, setAviso] = useState('')
   const [avisoEnvio, setAvisoEnvio] = useState('')   // "a minha voz não está chegando em fulano" (some sozinho quando passa a chegar)
+  const [vaga, setVaga] = useState(0)                 // a minha vaga na sala (1 = primeira pessoa a entrar)
   const [avisoRede, setAvisoRede] = useState('')       // "tem alguém na sala, mas a conexão direta com a pessoa não abre"
   const [diagnostico, setDiagnostico] = useState([])   // últimas falhas de conexão (seção "Detalhes técnicos")
   const [pessoas, setPessoas] = useState({})   // id -> { nome, voz, camera, tela }
@@ -657,7 +659,12 @@ export default function Chamada({ naPagina }) {
         retirarFluxo(chamada.peer, tipo, recebido)
       })
     })
-    verificador = setInterval(() => { procurarOutros(); verificarSinais() }, 4000)
+    // O relógio de fundo também avisa o servidor de salas que eu continuo aqui (mesmo com a aba escondida)
+    verificador = iniciarPulso(() => {
+      try { if (peer && peer.socket) peer.socket.send({ type: 'HEARTBEAT' }) } catch { /* ignora */ }
+      procurarOutros()
+      verificarSinais()
+    }, 4000)
     procurarOutros()
   }
 
@@ -669,7 +676,7 @@ export default function Chamada({ naPagina }) {
       if (!ativa) { candidato.destroy(); return } // a pessoa saiu antes de a vaga abrir
       setAviso('')
       if (peer === candidato) return              // reconectou ao servidor: já está tudo configurado
-      peer = candidato; minhaVaga = n; configurarPeer()
+      peer = candidato; minhaVaga = n; setVaga(n); configurarPeer()
     })
     // se a conexão com o servidor cair no meio da chamada, tenta voltar sozinho
     candidato.on('disconnected', () => {
@@ -870,7 +877,7 @@ export default function Chamada({ naPagina }) {
     encerrarTudo()
     tocarEfeito('saiu')
     setNaSala(false); setPessoas({}); setMinhaCamera(null); setTelaLigada(false); setMicLigado(true); setRolagens([])
-    setFalando([]); setMeuFluxo(null); setMicrofones([]); setSaidasDeSom([]); setProblemaMic(''); setSomBloqueado(false); setAvisoEnvio(''); setAvisoRede(''); setDiagnostico([])
+    setFalando([]); setMeuFluxo(null); setMicrofones([]); setSaidasDeSom([]); setProblemaMic(''); setSomBloqueado(false); setAvisoEnvio(''); setAvisoRede(''); setDiagnostico([]); setVaga(0)
     setMinhaMusicaInfo(null); setBotAberto(false); setAvisoMusica('')
   }
 
@@ -1039,7 +1046,7 @@ export default function Chamada({ naPagina }) {
         </div>
       ) : (
         <>
-          <p className="mb-3 text-sm text-dark-text-2">Sala {sala}: {lista.length + 1} pessoa(s)</p>
+          <p className="mb-3 text-sm text-dark-text-2">Sala {sala}: {lista.length + 1} pessoa(s) <span className="text-xs text-dark-text-3">(sua vaga: {vaga})</span></p>
 
           <div className="mb-4">
             {modo === 'conversa' && <LayoutConversa todos={todos} telas={telas} />}

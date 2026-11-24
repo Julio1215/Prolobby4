@@ -48,6 +48,9 @@ jobs:
         env:
           VITE_API_URL: /api                           # site e API ficam no mesmo endereço
           VITE_PEER_HOST: ${{ vars.VITE_PEER_HOST }}   # opcional: servidor da chamada (vazio = servidor público)
+          VITE_TURN_URL: ${{ vars.VITE_TURN_URL }}             # opcional: servidor TURN para redes fechadas (escola, empresa)
+          VITE_TURN_USUARIO: ${{ vars.VITE_TURN_USUARIO }}     # opcional
+          VITE_TURN_SENHA: ${{ secrets.VITE_TURN_SENHA }}      # opcional
 
       - name: Montar a pasta que vai para o servidor
         run: |

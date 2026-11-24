@@ -2,6 +2,16 @@
 # e não a página padrão da hospedagem.
 DirectoryIndex index.html
 
+# Cache: o index.html nunca fica guardado no navegador, ele sempre confere se mudou.
+# Assim, depois de cada publicação o site novo aparece sem precisar de Ctrl+Shift+R.
+# (Os arquivos da pasta assets têm um código no nome, tipo index-AbC123.js: quando o conteúdo muda,
+# o nome muda, então não tem problema o navegador guardá-los.)
+<IfModule mod_headers.c>
+  <FilesMatch "\.html$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
+
 # Rotas do React (react-router): qualquer endereço que não seja arquivo ou pasta abre o index.html.
 # A pasta /api fica de fora, porque ali é o PHP.
 <IfModule mod_rewrite.c>

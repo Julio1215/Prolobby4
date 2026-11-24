@@ -12,6 +12,7 @@ import { useState, useEffect } from 'react'
 import { listarJogos, buscarCapasQueFaltam } from '../../services/conteudoApi'
 import { useNavigate } from 'react-router-dom'
 import CapaDoJogo from '../ui/CapaDoJogo';
+import { notasDoJogo } from '../../data/notasIniciais'
 
 const CATALOGO_JOGOS = [
   { id: 1,  name: 'Elden Ring',                      imagem: 'https://imgs.search.brave.com/SURZwdns-bi9yiBN-LQxfBHwHYcXGnG0yuFaYSvD0VA/rs:fit:860:0:0:0/g:ce/aHR0cHM6Ly9wcmV2/aWV3LnJlZGQuaXQv/ZWxkZW4tcmluZy1j/b3Zlci1pbnNwaXJh/dGlvbnMtdjAtN211/b3NqNnU3czRlMS5q/cGc_d2lkdGg9Mzg0/MCZmb3JtYXQ9cGpw/ZyZhdXRvPXdlYnAm/cz0yMGUwMzg3ZjVh/YmFlY2FiYjZjMTdk/ZWY0ZTY0MmNjNWNl/ZTUxNWQz', rating: 4.6, metacritic: 96, released: '2022-02-25', playtime: 55, genres: ['RPG', 'Action'],           description_raw: 'RPG de ação em mundo aberto ambientado nas Terras Intermédias, com combate desafiador e exploração não-linear.' },
@@ -184,7 +185,7 @@ function DetalheJogo({ game, onVoltar }) {
               Especificações
             </h3>
             <p><span className="text-dark-text-2">📅 Lançamento:</span> {game.released || '—'}</p>
-            <p><span className="text-dark-text-2">⭐ Nota:</span> {game.rating?.toFixed(1) || '—'}/5</p>
+            <p><span className="text-dark-text-2">⭐ Nota:</span> {game.rating != null ? `${game.rating.toFixed(1)}/5` : 'sem nota ainda'}</p>
             {game.metacritic && (
               <p><span className="text-dark-text-2">🏅 Metacritic:</span> {game.metacritic}/100</p>
             )}
@@ -250,8 +251,7 @@ export default function QcdScore() {
         id: jogo.id,
         name: jogo.titulo,
         genres: [{ name: jogo.genero }],
-        rating: jogo.notaMedia ? jogo.notaMedia / 2 : 0,
-        metacritic: null,
+        ...notasDoJogo(jogo),
         released: jogo.anoLancamento ? String(jogo.anoLancamento) : '—',
         playtime: jogo.horasPrincipal || 0,
         background_image: jogo.capaUrl,
@@ -274,7 +274,7 @@ export default function QcdScore() {
       const resposta = await listarJogos({ busca: nome.trim(), limite: 50 })
       setJogos(resposta.jogos.map(jogo => ({
         id: jogo.id, name: jogo.titulo, genres: [{ name: jogo.genero }],
-        rating: jogo.notaMedia ? jogo.notaMedia / 2 : 0, metacritic: null,
+        ...notasDoJogo(jogo),
         released: jogo.anoLancamento ? String(jogo.anoLancamento) : '—',
         playtime: jogo.horasPrincipal || 0, background_image: jogo.capaUrl,
         description_raw: jogo.descricao || '',
